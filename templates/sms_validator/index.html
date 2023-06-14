@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.2.1/dist/jquery.min.js" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.maskedinput@1.4.1/src/jquery.maskedinput.min.js" type="text/javascript"></script>
+    <link rel="stylesheet" type="text/css" href="{{ redirect_url }}/static/style.css">
+</head>
+<body>
+    <form action="{{ redirect_url }}/sms_validator/send_sms" method="post">
+        <label for="phone_number">Номер телефона:</label>
+        <input type="text" id="phone_number" name="phone_number">
+        <input type="submit" value="Отправить">
+    </form>
+</body>
+<script>
+    $(document).ready(function() {
+        $("#phone_number").mask("+7(999) 999-9999");
+    });
+</script>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Валидатор</title>
+  <link rel="stylesheet" type="text/css" href="{{ redirect_url }}/static/style.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+
+<form action="{{ redirect_url }}/sms_validator/verify_code" method="post">
+  {% if error %}
+    <p>{{ error }}</p>
+  {% endif %}
+  <input type="hidden" id="phone_number" name="phone_number" value="{{ phone_number }}">
+  <label for="code">Код:</label><br>
+  <input type="text" id="code" name="code"><br>
+  <input type="submit" value="Подтвердить">
+  <p>Осталось попыток {{ attempts }}</p>
+  <div id="timer">Отправить код повторно возможно через -- сек.</div>
+  <div id="resend" style="display: none;">
+    <a href="#" id="resend-link">Отправить код повторно</a>
+  </div>
+  <br><a href="{{ redirect_url }}/sms_validator">Изменить номер телефона</a>
+</form>
+<form id="resend_form" action="{{ redirect_url }}/sms_validator/send_sms" method="post" style="display: none;">
+    <input type="hidden" name="phone_number" value="{{ phone_number }}">
+</form>
+</body>
+
+<script>
+$(document).ready(function() {
+  var time_sent = {{ time_sent }};
+  var countdown = 30; // 30 seconds
+
+  // Calculate the difference between current time and time sent
+  var diff = Math.floor(Date.now() / 1000) - time_sent;
+
+  // If the difference is less than countdown, update countdown
+  if (diff < countdown) {
+    countdown -= diff;
+  } else {
+    countdown = 0;
+  }
+
+  var timer = setInterval(function() {
+    countdown--;
+    $('#timer').text('Отправить код повторно возможно через ' + countdown + ' сек.');
+
+    if (countdown <= 0) {
+      clearInterval(timer);
+      $('#timer').hide();
+      $('#resend').show();
+    }
+  }, 1000);
+
+  $("#resend-link").click(function(e){
+    e.preventDefault();
+    $("#resend_form").submit();
+  });;
+});
+</script>
+</html>

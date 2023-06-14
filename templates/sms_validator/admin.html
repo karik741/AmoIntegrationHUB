@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Валидатор</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <style>
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-button {
+            border: 1px solid #ddd;
+            padding: 10px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+        }
+        .tab-button.active {
+            border-bottom: 1px solid white;
+            background-color: white;
+        }
+        .tab-container {
+            border: 1px solid #ddd;
+        }
+        table {
+            width: 30%;
+            border-collapse: collapse;
+        }
+        th, td {
+            width: 50%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        #leads-table {
+            width: 80%;
+        }
+        #leads-table th, #leads-table td {
+            width: 11.1%;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Панель управления</h1>
+
+<div class="tab-container">
+    <nav>
+        <button class="tab-button active" data-target="#settings">Настройки</button>
+        <button class="tab-button" data-target="#leads">Заявки</button>
+    </nav>
+
+    <div id="settings" class="tab-content active">
+        <h2>Супервайзеры</h2>
+        <table id="supervisors">
+        <!-- Заполнить данные -->
+        </table>
+        <button id="add-supervisor">Добавить супервайзера</button>
+
+        <h2>Промоутеры</h2>
+        <table id="promoters">
+        <!-- Заполнить данные -->
+        </table>
+        <button id="add-promoter">Добавить промоутера</button>
+
+        <h2>Локации</h2>
+        <table id="locations">
+        <!-- Заполнить данные -->
+        </table>
+        <button id="add-location">Добавить локацию</button>
+    </div>
+
+    <div id="leads" class="tab-content">
+        <h2>Заявки</h2>
+        <table id="leads-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Номер</th>
+                    <th>Имя</th>
+                    <th>Направление</th>
+                    <th>Супервайзер</th>
+                    <th>Промоутер</th>
+                    <th>Локация</th>
+                    <th>Дата создания</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Заполнить данные -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<script>
+$(document).ready(function() {
+
+    $('.tab-button').click(function() {
+        var target = $(this).data('target');
+        $('.tab-content').removeClass('active');
+        $(target).addClass('active');
+        $('.tab-button').removeClass('active');
+        $(this).addClass('active');
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_supervisors', function(data) {
+        var supervisors = data;  // уже в формате JSON
+        for (var i = 0; i < supervisors.length; i++) {
+            $('#supervisors').append('<tr><td>' + supervisors[i] + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+        }
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_locations', function(data) {
+        var locations = data;
+        for (var i = 0; i < locations.length; i++) {
+            $('#locations').append('<tr><td>' + locations[i] + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+        }
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_promoters', function(data) {
+        var promoters = data;
+        for (var i = 0; i < promoters.length; i++) {
+            $('#promoters').append('<tr><td>' + promoters[i] + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+        }
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_leads', function(data) {
+        var leads = data;
+        for (var i = 0; i < leads.length; i++) {
+            $('#leads-table tbody').append(
+                '<tr>' +
+                '<td>' + leads[i].id + '</td>' +
+                '<td>' + leads[i].phone + '</td>' +
+                '<td>' + leads[i].name + '</td>' +
+                '<td>' + leads[i].direction + '</td>' +
+                '<td>' + leads[i].supervisor + '</td>' +
+                '<td>' + leads[i].promoter + '</td>' +
+                '<td>' + leads[i].location + '</td>' +
+                '<td>' + leads[i].created_at + '</td>' +
+                '</tr>'
+            );
+        }
+});
+
+    // Обработка нажатия на кнопку "добавить"
+    $('#add-supervisor').click(function() {
+        var name = prompt("Введите имя супервайзера:");
+        if (name) {
+            $.post('{{ redirect_url }}/sms_validator/api/add_supervisor', {name: name}, function(data) {
+                if (data.success) {
+                    $('#supervisors').append('<tr><td>' + name + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#add-promoter').click(function() {
+        var name = prompt("Введите имя промоутера:");
+        if (name) {
+            $.post('{{ redirect_url }}/sms_validator/api/add_promoter', {name: name}, function(data) {
+                if (data.success) {
+                    $('#promoters').append('<tr><td>' + name + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#add-location').click(function() {
+        var name = prompt("Введите название локации:");
+        if (name) {
+            $.post('{{ redirect_url }}/sms_validator/api/add_location', {name: name}, function(data) {
+                if (data.success) {
+                    $('#locations').append('<tr><td>' + name + '</td><td><button class="edit">Редактировать</button><button class="delete">Удалить</button></td></tr>');
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    // Обработка нажатия на кнопку "редактировать"
+    $('#supervisors').on('click', '.edit', function() {
+        var row = $(this).closest('tr');
+        var oldName = row.find('td:first').text();
+        var newName = prompt("Введите новое имя супервайзера:", oldName);
+        if (newName) {
+            $.post('{{ redirect_url }}/sms_validator/api/edit_supervisor', {oldName: oldName, newName: newName}, function(data) {
+                if (data.success) {
+                    row.find('td:first').text(newName);
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#promoters').on('click', '.edit', function() {
+        var row = $(this).closest('tr');
+        var oldName = row.find('td:first').text();
+        var newName = prompt("Введите новое имя промоутера:", oldName);
+        if (newName) {
+            $.post('{{ redirect_url }}/sms_validator/api/edit_promoter', {oldName: oldName, newName: newName}, function(data) {
+                if (data.success) {
+                    row.find('td:first').text(newName);
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#locations').on('click', '.edit', function() {
+        var row = $(this).closest('tr');
+        var oldName = row.find('td:first').text();
+        var newName = prompt("Введите новое имя локации:", oldName);
+        if (newName) {
+            $.post('{{ redirect_url }}/sms_validator/api/edit_location', {oldName: oldName, newName: newName}, function(data) {
+                if (data.success) {
+                    row.find('td:first').text(newName);
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    // Обработка нажатия на кнопку "удалить"
+    $('#supervisors').on('click', '.delete', function() {
+        var row = $(this).closest('tr');
+        var name = row.find('td:first').text();
+        if (confirm("Вы уверены, что хотите удалить " + name + "?")) {
+            $.post('{{ redirect_url }}/sms_validator/api/delete_supervisor', {name: name}, function(data) {
+                if (data.success) {
+                    row.remove();
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#promoters').on('click', '.delete', function() {
+        var row = $(this).closest('tr');
+        var name = row.find('td:first').text();
+        if (confirm("Вы уверены, что хотите удалить " + name + "?")) {
+            $.post('{{ redirect_url }}/sms_validator/api/delete_promoter', {name: name}, function(data) {
+                if (data.success) {
+                    row.remove();
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+
+    $('#locations').on('click', '.delete', function() {
+        var row = $(this).closest('tr');
+        var name = row.find('td:first').text();
+        if (confirm("Вы уверены, что хотите удалить " + name + "?")) {
+            $.post('{{ redirect_url }}/sms_validator/api/delete_location', {name: name}, function(data) {
+                if (data.success) {
+                    row.remove();
+                } else {
+                    alert(data.error);
+                }
+            });
+        }
+    });
+});
+</script>
+
+</body>
+</html>

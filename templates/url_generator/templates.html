@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Список шаблонов</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            color: #333;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            margin-bottom: 1em;
+            padding: 1em;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        a {
+            color: #337ab7;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Выберите шаблон</h1>
+    <ul>
+    {% for template in templates.messageTemplates %}
+        <li>
+            <h2>{{ template.name }}</h2>
+            <p>{{ template.text }}</p>
+            <a href="{{ redirect_url }}/template/{{ template.id }}">Выбрать</a>
+        </li>
+    {% endfor %}
+    </ul>
+</body>
+</html>

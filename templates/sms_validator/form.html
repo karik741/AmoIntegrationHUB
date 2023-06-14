@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Валидатор</title>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="{{ redirect_url }}/static/style.css">
+</head>
+<body>
+  <form action="/submit_form" method="post">
+    <input type="hidden" id="phone_number" name="phone_number" value="{{ phone_number }}">
+
+    <label for="promoter">Промоутер:</label><br>
+    <select id="promoter" name="promoter">
+    </select><br>
+
+    <label for="location">Локация:</label><br>
+    <select id="location" name="location">
+    </select><br>
+
+    <label for="name">Имя:</label><br>
+    <input type="text" id="name" name="name"><br>
+
+    <label for="direction">Направление:</label><br>
+    <select id="direction" name="direction">
+      <option>Вокал</option>
+      <option>Гитара</option>
+      <option>Фортепиано</option>
+      <option>Барабаны</option>
+    </select><br>
+
+
+    <label for="supervisor">Супервайзер:</label><br>
+    <select id="supervisor" name="supervisor">
+      <!-- Добавьте здесь варианты -->
+    </select><br>
+    <input type="submit" value="Отправить">
+  </form>
+</body>
+
+<script>
+  $(document).ready(function() {
+    $.get('{{ redirect_url }}/sms_validator/api/get_supervisors', function (data) {
+      var supervisors = data;
+      for (var i = 0; i < supervisors.length; i++) {
+        $('#supervisor').append('<option>' + supervisors[i] + '</option>');
+      }
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_locations', function (data) {
+      var locations = data;
+      for (var i = 0; i < locations.length; i++) {
+        $('#location').append('<option>' + locations[i] + '</option>');
+      }
+    });
+
+    $.get('{{ redirect_url }}/sms_validator/api/get_promoters', function (data) {
+      var promoters = data;
+      for (var i = 0; i < promoters.length; i++) {
+        $('#promoter').append('<option>' + promoters[i] + '</option>');
+      }
+    });
+
+    $("form").on('submit', function(e) {
+      e.preventDefault();  // предотвращаем стандартное поведение формы
+
+      $.post({
+        url: '{{ redirect_url }}/sms_validator/submit_form',
+        data: $(this).serialize(),
+        success: function(response) {
+          alert("Успешно отправлено!");
+          window.location.href = '{{ redirect_url }}/sms_validator';
+        }
+      });
+    });
+  });
+</script>
