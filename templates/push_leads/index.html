@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Загрузить файл</title>
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container mt-5">
+      <div class="row">
+          <div class="col-md-6 mx-auto">
+              <div class="form-group">
+                  <label>Выберите воронку:</label>
+                  <select id="pipelines" class="form-control">
+                      {% for pipeline in pipelines %}
+                          <option value="{{ pipeline.id }}">{{ pipeline.name }}</option>
+                      {% endfor %}
+                  </select>
+              </div>
+
+              <div class="form-group">
+                  <label>Выберите статус:</label>
+                  <select id="statuses" class="form-control">
+                      <!-- Статусы будут заполнены JavaScript -->
+                  </select>
+              </div>
+
+              <div class="form-group">
+                  <label>Выберите причину отказа:</label>
+                  <select id="lossReasons" class="form-control">
+                      {% for reason in loss_reasons %}
+                          <option value="{{ reason.id }}">{{ reason.name }}</option>
+                      {% endfor %}
+                  </select>
+              </div>
+
+              <div class="form-group">
+                  <label>Имя сделки:</label>
+                  <input type="text" id="dealName" class="form-control">
+              </div>
+
+              <div class="form-group">
+                  <label>Тэг:</label>
+                  <input type="text" id="tag" class="form-control">
+              </div>
+
+              <div class="form-group">
+                  <label>Загрузить файл:</label>
+                  <input type="file" id="fileUpload" class="form-control-file">
+              </div>
+
+              <div class="form-group">
+                  <button id="checkButton" class="btn btn-primary">Отправить в АМО</button>
+              </div>
+          </div>
+      </div>
+  </div>
+</body>
+<script>
+  $(document).ready(function() {
+    var validLines;
+
+    $('#fileUpload').change(function() {
+      var fileInput = $('#fileUpload').get(0);
+      var file = fileInput.files[0];
+      if (file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var content = e.target.result;
+          var lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+          validLines = lines.filter(function(line) {
+            return line.match(/^\d{11}$/);
+          });
+          alert('Количество валидных номеров в файле: ' + validLines.length);
+        };
+        reader.readAsText(file);
+      }
+    });
+
+    $('#pipelines').change(function() {
+      var selectedPipelineId = $(this).val();
+
+      var pipelinesData = {{ pipelines|tojson }};
+      var selectedPipeline = pipelinesData.find(function(pipeline) {
+          return pipeline.id == selectedPipelineId;
+      });
+
+      var selectedStatuses = selectedPipeline.statuses;
+      var options = '';
+      for (var i = 0; i < selectedStatuses.length; i++) {
+          options += '<option value="' + selectedStatuses[i].id + '">' + selectedStatuses[i].name + '</option>';
+      }
+      $('#statuses').html(options);
+    });
+
+    $('#checkButton').click(function() {
+      if (validLines) {
+        var pipelineId = $('#pipelines').val();
+        var statusId = $('#statuses').val();
+        var lossReasonId = $('#lossReasons').val();
+        var dealName = $('#dealName').val().trim();
+        var tag = $('#tag').val().trim();
+        $.ajax({
+          url: '{{ redirect_url }}/push_leads/api/send',
+          method: 'POST',
+          data: JSON.stringify({
+                'numbers': validLines,
+                'pipeline_id': pipelineId,
+                'status_id': statusId,
+                'loss_reason_id': lossReasonId,
+                'deal_name': dealName,
+                'tag': tag
+            }),
+          contentType: 'application/json',
+          success: function(response) {
+            alert("Успешно отправлено!");
+            window.location.href = '{{ redirect_url }}/push_leads';
+          }
+        });
+      }
+      else {
+        alert('Номера не найдены')
+      }
+    });
+  });
+  </script>
+</html>

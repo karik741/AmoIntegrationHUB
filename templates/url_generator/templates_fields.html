@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Замены для шаблона</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            color: #333;
+        }
+        form {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        label {
+            display: block;
+            margin-top: 1em;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: .5em;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input[type="submit"] {
+            display: block;
+            margin-top: 1em;
+            padding: .5em 2em;
+            background: #337ab7;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type="submit"]:hover {
+            background: #286090;
+        }
+    </style>
+</head>
+<body>
+    <form action="{{ redirect_url }}/generate_link" method="post">
+      {% for template in templates %}
+        <h3>{{ template.name }}</h3>
+        {% for substitution in template.substitutions %}
+          <label for="{{ substitution }}">{{ substitution }}</label>
+          {% if substitution == 'customerName' %}
+            <input id="substitution_{{ template.id }}_customerName" name="substitution_{{template.id}}_{{ substitution }}" type="text" value="name" readonly required>
+          {% else %}
+            <input id="substitution_{{ template.id }}_{{ substitution }}" name="substitution_{{template.id}}_{{ substitution }}" type="text" required>
+          {% endif %}
+        {% endfor %}
+        <input type="hidden" name="template_{{template.id}}_id" value="{{template.id}}" />
+      {% endfor %}
+      <input type="submit" value="Сгенерировать ссылку">
+    </form>
+</body>
+<script>
+$(document).ready(function() {
+  $('form').on('submit', function(e) {
+    e.preventDefault();
+
+    var dataToSend = [];
+
+    {% for template in templates %}
+      var templateData = {};
+      templateData['id'] = '{{ template.id }}';
+      templateData['substitutions'] = {};
+      {% for substitution in template.substitutions %}
+        templateData['substitutions']['{{ substitution }}'] = $("#substitution_{{ template.id }}_{{ substitution }}").val();
+      {% endfor %}
+      dataToSend.push(templateData);
+    {% endfor %}
+
+    $.ajax({
+      url: "{{ redirect_url }}/generate_link",
+      type: "post",
+      contentType: 'application/json',
+      data: JSON.stringify(dataToSend),
+      success: function(response) {
+        alert(response)
+      }
+    });
+
+  });
+});
+</script>
+</html>

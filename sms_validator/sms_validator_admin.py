@@ -4,13 +4,10 @@ import peewee as pw
 from sms_validator.models import Lead
 from config import Config
 
-redirect_url = Config.redirect_url
-# redirect_url = 'http://localhost:8093'
-
 
 async def sms_validator_admin(request):
 
-    return aiohttp_jinja2.render_template('sms_validator/admin.html', request, {'redirect_url': redirect_url})
+    return aiohttp_jinja2.render_template('sms_validator/admin.html', request, {'redirect_url': Config.redirect_url})
 
 
 async def get_entities(model):

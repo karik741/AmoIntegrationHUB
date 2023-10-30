@@ -1,9 +1,10 @@
-import peewee as pw
-from playhouse.db_url import connect
 from datetime import datetime
 
+import peewee as pw
+from playhouse.db_url import connect
+from config import Config
 
-db_url = 'sqlite:///sms_validator/sms_validator.db'
+db_url = Config.db_url
 db = connect(db_url)
 
 

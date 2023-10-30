@@ -1,23 +1,25 @@
 import typing
 from datetime import datetime, timedelta
-from typing import TypedDict
+from typing import TypedDict, Union
 import time
+from asgiref.sync import async_to_sync
 
 from amocrm.v2 import Task, User, tokens
 from amocrm.v2.entity.note import _Note
 
 from config import Config
-from entity_helpers.contact_search import find_contact_by_docrm_data, Contact, HasActiveGroupDealValues, \
-    HasActiveIndividualDealValues
-from entity_helpers.enums import ProgramType, LeadFunnels, DealAction
+from entity_helpers.contact_search import find_contact_by_docrm_data, Contact
+from entity_helpers.enums import ProgramType, LeadFunnels, DealAction, SubscriptionStatus, PaymentMethod
 from entity_helpers.lead_custom_fields import Lead
 from time_helpers import time_for_amo, Instant, unix_time
 from tags_helpers import create_tags
+from subscription import get_subscription
 
 
 class DealPayment(TypedDict):
     amount: float
     when: Instant
+    method: int
 
 
 class DealData(TypedDict):
@@ -37,6 +39,8 @@ class DealData(TypedDict):
     totalTimeUnits: int
     sellers: list[str]
     lastSimiliarFutureLesson: Instant | None
+    subscriptionStatus: int
+    isDead: bool
 
 
 def on_deal_changed(deal_data: DealData):
@@ -61,21 +65,73 @@ def on_deal_changed(deal_data: DealData):
         # Не нашли контакт в АМО, ничего не делаем
         return
 
+    if deal_data['payments'][0]['method'] == PaymentMethod.inner_transfer:
+        return
+
     if deal_data['programType'] == ProgramType.event:
         process_event_deal(contact, deal_data)
         return
 
-    if deal_data['type'] == 'Первичный':
-        leads = contact.primary_leads()
-        process_primary_deal(contact, deal_data, leads)
-        return
+    if (deal_data['subscriptionStatus'] == SubscriptionStatus.paid or
+        deal_data['subscriptionStatus'] == SubscriptionStatus.prepaid):
+        if deal_data['type'] == 'Первичный':
+            leads = contact.primary_leads()
+            process_primary_deal(contact, deal_data, leads)
+            return
 
-    if deal_data['type'] == 'Вторичный':
-        leads = contact.secondary_leads()
-        process_secondary_deal(contact, deal_data, leads)
-        return
+        if deal_data['type'] == 'Вторичный':
+            leads = contact.secondary_leads()
+            process_secondary_deal(contact, deal_data, leads)
+            return
+
+    if deal_data['subscriptionStatus'] == SubscriptionStatus.archived:
+        leads = contact.primary_and_secondary_leads()
+        process_archived(contact, deal_data, leads)
 
     return
+
+
+def process_archived(contact: Contact, deal_data: DealData, leads: list[Lead]):
+    lead = choose_lead_for_archived(leads, deal_data)
+    if lead:
+        create_note_for_archived(lead, deal_data)
+        create_task_for_archived(lead, deal_data)
+        lead.status = Config.lead_status_zero_lessons_remained_value_id
+        lead.save()
+
+    else:
+        create_note_for_archived(contact, deal_data)
+        create_task_for_archived(contact, deal_data)
+        contact.save()
+
+
+
+def create_task_for_archived(entity: Union[Lead, Contact], deal_data: DealData):
+    task = Task()
+    task.text = (f'{datetime.now().strftime("%d.%m.%Y %H:%M")} '
+                 f'ушел в архив абонемент {"индивидуальный" if deal_data["isIndividual"] else "групповой"}'
+                 f'{deal_program_type(deal_data)}, '
+                 f'направление: {deal_data["subjectName"]} на {deal_data["totalTimeUnits"]} часа(ов).'
+                 f' за {deal_data["price"]} рублей.')
+
+    task.entity_id = entity.id
+    task.entity_type = 'leads' if isinstance(entity, Lead) else 'contacts'
+    task.task_type_id = Config.task_type_renew_value_id
+    task.responsible_user = Config.user_sales_person_id
+    task.complete_till = datetime.now() + timedelta(seconds=60)
+    task.save()
+
+
+def create_note_for_archived(entity: Union[Lead, Contact], deal_data: DealData):
+    entity.notes.objects.create(
+        note_type='common',
+        params={
+            "text": f'Истек абонемент {"индивидуальный" if deal_data["isIndividual"] else "групповой"} '
+                    f'{deal_program_type(deal_data)}, '
+                    f'направление: {deal_data["subjectName"]} на {deal_data["totalTimeUnits"]} часа(ов).'
+                    f' за {deal_data["price"]} рублей.'
+        }
+    )
 
 
 def process_event_deal(contact: Contact, deal_data: DealData):
@@ -86,6 +142,34 @@ def process_event_deal(contact: Contact, deal_data: DealData):
         contact_tags = ['НЕ студент школы купил билет на концерт']
         create_tags(contact, contact_tags, access_token)
         create_tags(lead, lead_tags, access_token)
+    lead.roistat = "лид с концерта"
+    lead.save()
+
+
+def process_paid_promo(contact: Contact, deal_data: DealData, leads: list[Lead]):
+    payment_time = time_for_amo(deal_data['payments'][0]['when'])
+    lead = choose_lead_for_paid_promo(contact, leads, deal_data)
+    if lead.id_subscription_paid_promo is not None:
+        promo_ids = lead.id_subscription_paid_promo.split(', ')
+        promo_ids.append(deal_data['id'])
+        lead.id_subscription_paid_promo = ', '.join(promo_ids)
+    else:
+        lead.id_subscription_paid_promo = deal_data['id']
+    lead.price = new_price_for_lead(lead, deal_data)
+    lead.notes.objects.create(
+        note_type='common',
+        params={
+            "text": f'{datetime.utcfromtimestamp(payment_time).strftime("%d.%m.%Y %H:%M")} '
+                    f'получен платеж {deal_data["payments"][0]["amount"]}. '
+                    f'{"Индивидуальный" if deal_data["isIndividual"] else "Групповой"} '
+                    f'{deal_program_type(deal_data)}. '
+                    f'Направление: {deal_data["subjectName"]}'
+        }
+    )
+    lead.pipeline = Config.primary_leads_pipeline_id
+    lead.status = Config.lead_status_payed_for_promo_value_id
+    lead.save()
+    create_paid_promo_task(deal_data, lead)
 
 
 def process_primary_deal(contact: Contact, deal_data: DealData, leads: list[Lead]):
@@ -102,33 +186,13 @@ def process_primary_deal(contact: Contact, deal_data: DealData, leads: list[Lead
         on_paid_deal_payment(deal_data, contact, lead, DealAction.bought)
 
     if deal_data['programType'] == ProgramType.paid_promo:
-        payment_time = time_for_amo(deal_data['payments'][0]['when'])
-        lead = choose_lead_for_paid_promo(contact, leads, deal_data)
-        if lead.id_subscription_paid_promo is not None:
-            promo_ids = lead.id_subscription_paid_promo.split(', ')
-            promo_ids.append(deal_data['id'])
-            lead.id_subscription_paid_promo = ', '.join(promo_ids)
-        else:
-            lead.id_subscription_paid_promo = deal_data['id']
-        lead.price = new_price_for_lead(lead, deal_data)
-        lead.notes.objects.create(
-            note_type='common',
-            params={
-                "text": f'{datetime.utcfromtimestamp(payment_time).strftime("%d.%m.%Y %H:%M")} '
-                        f'получен платеж {deal_data["payments"][0]["amount"]}. '
-                        f'{"Индивидуальный" if deal_data["isIndividual"] else "Групповой"} '
-                        f'{deal_program_type(deal_data)}. '
-                        f'Направление: {deal_data["subjectName"]}'
-            }
-        )
-        lead.pipeline = Config.primary_leads_pipeline_id
-        lead.status = Config.lead_status_payed_for_promo_value_id
-        lead.save()
-        create_paid_promo_task(deal_data, lead)
+        process_paid_promo(contact, deal_data, leads)
+
 
 
 def process_secondary_deal(contact: Contact, deal_data: DealData, leads: list[Lead]):
     if deal_data['programType'] == ProgramType.paid:
+        leads = contact.primary_and_secondary_leads()
         lead = choose_lead_for_deal(contact, leads, deal_data)
         lead.price = new_price_for_lead(lead, deal_data)
         payment_time = time_for_amo(deal_data['payments'][0]['when'])
@@ -141,29 +205,8 @@ def process_secondary_deal(contact: Contact, deal_data: DealData, leads: list[Le
         on_paid_deal_payment(deal_data, contact, lead, DealAction.visits)
 
     if deal_data['programType'] == ProgramType.paid_promo:
-        payment_time = time_for_amo(deal_data['payments'][0]['when'])
-        lead = choose_lead_for_paid_promo(contact, leads, deal_data)
-        if lead.id_subscription_paid_promo is not None:
-            promo_ids = lead.id_subscription_paid_promo.split(', ')
-            promo_ids.append(deal_data['id'])
-            lead.id_subscription_paid_promo = ', '.join(promo_ids)
-        else:
-            lead.id_subscription_paid_promo = deal_data['id']
-        lead.price = new_price_for_lead(lead, deal_data)
-        lead.notes.objects.create(
-            note_type='common',
-            params={
-                "text": f'{datetime.utcfromtimestamp(payment_time).strftime("%d.%m.%Y %H:%M")} '
-                        f'получен платеж {deal_data["payments"][0]["amount"]}. '
-                        f'{"Индивидуальный" if deal_data["isIndividual"] else "Групповой"}'
-                        f'{deal_program_type(deal_data)}. '
-                        f'Направление: {deal_data["subjectName"]}'
-            }
-        )
-        lead.pipeline = Config.secondary_leads_pipeline_id
-        lead.status = Config.lead_status_needs_schedule_value_id
-        lead.save()
-        create_paid_promo_task(deal_data, lead)
+        leads = contact.primary_leads()
+        process_paid_promo(contact, deal_data, leads)
 
 
 def create_note_for_lead(lead: Lead, deal_data: DealData, payment_time: int):
@@ -190,7 +233,7 @@ def create_paid_promo_task(deal_data: DealData, lead: Lead):
     new_task.entity_id = lead.id
     new_task.entity_type = 'leads'
     new_task.task_type_id = Config.task_type_cc_promo_register_value_id
-    new_task.responsible_user = Config.user_free_cc_tasks_holder_id
+    new_task.responsible_user = Config.user_admin_2_id
     new_task.complete_till = datetime.now() + timedelta(seconds=60)
     new_task.save()
 
@@ -214,7 +257,8 @@ def on_paid_deal_payment(deal_data: DealData, contact: Contact, lead: Lead, acti
         new_task.entity_id = lead.id
         new_task.entity_type = 'leads'
         new_task.task_type_id = Config.task_type_fullpay_value_id
-        new_task.responsible_user = record_active_user_id_or_default(Config.user_sales_person_id, active_users)
+        new_task.responsible_user = lead.responsible_user.id if Config.settings_task_type_fullpay_to_current_manager else \
+            record_active_user_id_or_default(Config.user_sales_person_id, active_users)
         new_task.complete_till = datetime.now() + timedelta(seconds=60)
         new_task.save()
         record_task(deal_data, lead)
@@ -231,7 +275,7 @@ def record_task(deal_data: DealData, lead: Lead):
     new_task.entity_id = lead.id
     new_task.entity_type = 'leads'
     new_task.task_type_id = Config.task_type_register_new_value_id
-    new_task.responsible_user = Config.user_admin_id
+    new_task.responsible_user = Config.user_admin_1_id
     new_task.complete_till = deal_time_to_task(deal_data)
     new_task.save()
 
@@ -266,9 +310,12 @@ def move_tasks_and_notes_to_lead(old_lead: Lead, new_lead: Lead):
     if len(old_lead_tasks) > 0:
         for old_lead_task in old_lead_tasks:
             copy_and_move_task(old_lead_task, new_lead.id, active_users)
+            time.sleep(0.15)
     if len(old_lead_notes) > 0:
         for old_lead_note in old_lead_notes:
             copy_lead_note(old_lead_note, new_lead, active_users)
+            time.sleep(0.15)
+
 
 
 def copy_fields(old_lead: Lead, new_lead: Lead, deal_data: DealData):
@@ -357,7 +404,6 @@ def deal_time_to_task(deal_data: DealData):
 
 
 def active_user_id_or_default(entity: typing.Any, field_name: str, active_users: list[User]):
-    # noinspection PyBroadException
     try:
         user = getattr(entity, field_name)
         return next((u.id for u in active_users if u.id == user.id), Config.user_technician_id)
@@ -388,18 +434,26 @@ def choose_lead_for_deal(contact: Contact, leads: list[Lead], deal_data: DealDat
         for lead in leads:
             if lead.id_subscription_payments == deal_data['id']:
                 return lead
+        not_payments_leads = [lead for lead in leads if lead.id_subscription_payments is None]
+        if len(not_payments_leads) > 0:
+            lessons_leads = [lead for lead in not_payments_leads if lead.id_subscription_lessons is not None]
+            if len(lessons_leads) > 0:
+                for lead in lessons_leads:
+                    subscription = async_to_sync(get_subscription)(lead.id_subscription_lessons)
+                    if (deal_data['subjectName'] in subscription['subjects'] and
+                        deal_data['programType'] == subscription['programType'] and
+                        deal_data['isIndividual'] == subscription['isIndividual']):
+                        return lead
+                for lead in lessons_leads:
+                    subscription = async_to_sync(get_subscription)(lead.id_subscription_lessons)
+                    if deal_data['subjectName'] in subscription['subjects']:
+                        return lead
         for lead in leads:
-            if lead.id_subscription_payments is None and lead.id_subscription_paid_promo is not None:
+            if lead.id_subscription_payments is None and lead.id_subscription_lessons is None:
                 return lead
-        for lead in leads:
-            if lead.id_subscription_payments is None:
-                return lead
-    if deal_data['type'] == "Первичный":
-        lead = create_lead(deal_data, contact, LeadFunnels.primary)
-        return lead
-    if deal_data['type'] == "Вторичный":
-        lead = create_lead(deal_data, contact, LeadFunnels.secondary)
-        return lead
+
+    lead = create_lead(deal_data, contact, LeadFunnels.secondary)
+    return lead
 
 
 def choose_lead_for_paid_promo(contact: Contact, leads: list[Lead], deal_data: DealData):
@@ -454,3 +508,15 @@ def choose_lead_for_tag(contact: Contact):
         return Lead()
     else:
         return Lead()
+
+
+def choose_lead_for_archived(leads: list[Lead], deal_data: DealData):
+    if len(leads) > 0:
+        for lead in leads:
+            if lead.id_subscription_paid_promo == deal_data['id']:
+                return lead
+            if lead.id_subscription_payments == deal_data['id']:
+                return lead
+            if lead.id_subscription_payments == deal_data['id']:
+                return lead
+    return None

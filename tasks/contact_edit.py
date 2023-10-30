@@ -1,11 +1,12 @@
 from typing import TypedDict
 
-from amocrm.v2 import Lead
+from amocrm.v2.exceptions import NotFound
+from entity_helpers.lead_custom_fields import Lead
 from config import Config
 from entity_helpers.contact_search import find_contact_by_docrm_data, Contact, VisitedTrialValues, HasPrepaidValues, \
     HasFullPaidValues, IsInScheduleGroupValues, IsInScheduleIndividualValues, HasActiveIndividualDealValues, \
     HasActiveGroupDealValues
-from time_helpers import Instant
+from time_helpers import Instant, time_for_amo
 
 
 class ContactData(TypedDict):
@@ -52,8 +53,11 @@ class ContactData(TypedDict):
 
 def on_contact_edit(contact_data: ContactData):
     contact = None
-    if contact_data["amoId"]:
-        contact = Contact.objects.get(contact_data["amoId"])
+    try:
+        if contact_data["amoId"]:
+            contact = Contact.objects.get(contact_data["amoId"])
+    except NotFound:
+        print(f'Контакт с id {contact_data["amoId"]} не найден')
 
     if not contact:
         contact = find_contact_by_docrm_data(contact_data["id"], contact_data["phone"])
@@ -85,7 +89,7 @@ def on_contact_edit(contact_data: ContactData):
         contact.doCRM_url = contact_data['url']
 
     if contact_data['lastVisitTrialLessonDate']:
-        contact.last_visited_trial_lesson_date = contact_data['lastVisitTrialLessonDate']['__instant']
+        contact.last_visited_trial_lesson_date = time_for_amo(contact_data['lastVisitTrialLessonDate'])
 
     if contact_data['lastVisitTrialLessonDirection']:
         contact.last_visited_trial_lesson_direction = contact_data['lastVisitTrialLessonDirection']
@@ -93,8 +97,8 @@ def on_contact_edit(contact_data: ContactData):
     if contact_data['lastVisitTrialLessonTeacher'] is not None:
         contact.last_visited_trial_lesson_teacher = contact_data['lastVisitTrialLessonTeacher']
 
-    if contact_data['fullPaidDate']:
-        contact.full_paid_date = contact_data['fullPaidDate']['__instant']
+    if contact_data['fullPaidDate'] is not None:
+        contact.full_paid_date = time_for_amo(contact_data['fullPaidDate'])
 
     if contact_data['lastDealPaidSum']:
         contact.last_deal_paid_sum = contact_data['lastDealPaidSum']
@@ -109,7 +113,7 @@ def on_contact_edit(contact_data: ContactData):
         contact.paid_individual_count = contact_data['paidIndividualDealCount']
 
     if contact_data['lastGroupDealEndDate']:
-        contact.last_group_deal_end_date = contact_data['lastGroupDealEndDate']['__instant']
+        contact.last_group_deal_end_date = time_for_amo(contact_data['lastGroupDealEndDate'])
 
     if contact_data['remainedGroupLessonsCount']:
         contact.remained_group_lesson_count = contact_data['remainedGroupLessonsCount']
@@ -118,7 +122,7 @@ def on_contact_edit(contact_data: ContactData):
         contact.remained_individual_lesson_count = contact_data['remainedIndividualLessonsCount']
 
     if contact_data['lastGroupLessonVisitDate']:
-        contact.last_group_lesson_visit_date = contact_data['lastGroupLessonVisitDate']['__instant']
+        contact.last_group_lesson_visit_date = time_for_amo(contact_data['lastGroupLessonVisitDate'])
 
     if contact_data['lastGroupLessonVisitDirection']:
         contact.last_group_lesson_visit_direction = contact_data['lastGroupLessonVisitDirection']
@@ -127,13 +131,13 @@ def on_contact_edit(contact_data: ContactData):
         contact.last_group_lesson_visit_teacher = contact_data['lastGroupLessonVisitTeacher']
 
     if contact_data['lastCancelledRecordDate']:
-        contact.last_cancelled_record_date = contact_data['lastCancelledRecordDate']['__instant']
+        contact.last_cancelled_record_date = time_for_amo(contact_data['lastCancelledRecordDate'])
 
     if contact_data['lastRecordInCardDate']:
-        contact.last_record_date = contact_data['lastRecordInCardDate']['__instant']
+        contact.last_record_date = time_for_amo(contact_data['lastRecordInCardDate'])
 
     if contact_data['lastReceiveTime'] is not None:
-        contact.last_receive_time = contact_data['lastReceiveTime']['__instant']
+        contact.last_receive_time = time_for_amo(contact_data['lastReceiveTime'])
 
     if contact_data['visitedTrialLesson'] is not None:
         contact.visited_trial_lesson = VisitedTrialValues.yes \
@@ -163,53 +167,27 @@ def on_contact_edit(contact_data: ContactData):
         contact.is_in_schedule_individual = IsInScheduleIndividualValues.yes \
             if contact_data['isInScheduleIndividual'] else IsInScheduleIndividualValues.no
 
+    # if contact_data['crmSegment'] is not None:
+    #     lead = contact.leads_loaded[0]
+    #     lead.pipeline = Config.primary_leads_pipeline_id
+    #     lead.status = Config.lead_status_primary_rejection
+    #     access_token = tokens.default_token_manager.get_access_token()
+    #     create_tags(lead, [contact_data['crmSegment']], access_token)
+    #     lead.save()
+
     contact.save()
+
 
     if need_to_create_lead:
         new_lead = Lead()
         new_lead.name = contact_data["name"] if contact_data["name"] else "Сделка"
         new_lead.responsible_user = Config.user_free_cc_tasks_holder_id
+        new_lead.pipeline = Config.primary_leads_pipeline_id
+        new_lead.status = Config.lead_status_new_lead_value_id
         new_lead.price = 0
-        if contact_data['crmSegment'] is not None:
-            match  contact_data['crmSegment']:
-                case 'A':
-                    new_lead.pipeline = Config.secondary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_in_schedule_value_id
-                case 'B':
-                    new_lead.pipeline = Config.secondary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_fullpayed_for_course_value_id
-                case 'C':
-                    new_lead.pipeline = Config.secondary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_zero_lessons_remained_value_id
-                case 'D':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_recorded_to_promo_value_id
-                case 'E':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_missed_promo_value_id
-                case 'F':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_visited_promo_value_id
-                case 'G':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_prepayed_for_course_value_id
-                case 'H':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_primary_rejection
-                    new_lead.loss_reason_id = Config.lead_primary_loss_reason_not_payed
-                case 'I':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_primary_rejection
-                    new_lead.loss_reason_id = Config.lead_primary_loss_reason_visit_promo_not_payed
-                case 'J':
-                    new_lead.pipeline = Config.primary_leads_pipeline_id
-                    new_lead.status = Config.lead_status_primary_rejection
-                    new_lead.loss_reason_id = Config.lead_primary_loss_reason_in_rejection
-
-            new_lead.pipeline = Config.primary_leads_pipeline_id
-            new_lead.status = Config.lead_status_new_lead_value_id
         new_lead.save()
         # TODO Дальше будет очень некрасивый хак, надо сделать PR в библиотеку и исправить его
         contacts = new_lead.contacts
         links = contacts._links
         links.link(for_entity=contacts._instance, to_entity=contact, main=False, metadata={"is_main": True})
+

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Настройки интеграции</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <style>
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-button {
+            border: 1px solid #ddd;
+            padding: 10px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+        }
+        .tab-button.active {
+            border-bottom: 1px solid white;
+            background-color: white;
+        }
+        .tab-container {
+            border: 1px solid #ddd;
+        }
+        table {
+            width: 30%;
+            border-collapse: collapse;
+        }
+        th, td {
+            width: 50%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        #leads-table {
+            width: 80%;
+        }
+        #leads-table th, #leads-table td {
+            width: 11.1%;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Панель управления</h1>
+
+<div class="tab-container">
+    <nav>
+        <button class="tab-button active" data-target="#tasks">Задачи</button>
+    </nav>
+    <div id="tasks" class="tab-content active">
+        <div id="task_type_promo_retro">
+            <h3>Задача 1: "Сбор ОС пробный"</h3>
+            <form>
+                <label>
+                    Ставить на текущего ответственного в сделке
+                    <input type="checkbox" class="current" data-task="task_type_promo_retro" {% if config.settings_task_type_fullpay_to_current_manager %}checked{% endif %}>
+                </label>
+            </form>
+        </div>
+        <div id="task_type_fullpay">
+            <h3>Задача 2: "Доплата брони"</h3>
+            <form>
+                <label>
+                    Ставить на текущего ответственного в сделке
+                    <input type="checkbox" class="current" data-task="task_type_fullpay" {% if config.settings_task_type_promo_retro_to_current_manager %}checked{% endif %}>
+                </label>
+            </form>
+        </div>
+        <div id="task_type_reregister">
+            <h3>Задача 3: "Перезаписать промо"</h3>
+            <form>
+                <label>
+                    Ставить на текущего ответственного в сделке
+                    <input type="checkbox" class="current" data-task="task_type_reregister" {% if config.settings_task_type_reregister_to_current_manager %}checked{% endif %}>
+                </label>
+            </form>
+        </div>
+        <br>
+        <button id="submit">Сохранить</button>
+    </div>
+</div>
+
+
+<script>
+$(document).ready(function() {
+
+    $('.tab-button').click(function() {
+        var target = $(this).data('target');
+        $('.tab-content').removeClass('active');
+        $(target).addClass('active');
+        $('.tab-button').removeClass('active');
+        $(this).addClass('active');
+    });
+
+    // Обработка нажатия на кнопку "добавить"
+    $("#submit").click(function(e) {
+        e.preventDefault();
+        var task_type_promo_retro = $("#task_type_promo_retro .current").is(":checked");
+        var task_type_fullpay = $("#task_type_fullpay .current").is(":checked");
+        var task_type_reregister = $("#task_type_reregister .current").is(":checked");
+
+        $.ajax({
+            url: "{{ redirect_url }}/settings/api/submit",
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+                "settings_task_type_fullpay_to_current_manager": task_type_promo_retro,
+                "settings_task_type_promo_retro_to_current_manager": task_type_fullpay,
+                "settings_task_type_reregister_to_current_manager": task_type_reregister,
+            }),
+            success: function(response) {
+                alert('Настройки успешно применены');
+            },
+            error: function(err) {
+                console.error(err);
+            }
+        });
+    });
+
+
+});
+</script>
+
+</body>
+</html>

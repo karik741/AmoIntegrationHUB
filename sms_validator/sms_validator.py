@@ -1,4 +1,4 @@
-import aiohttp_jinja2
+from aiohttp_jinja2 import render_template
 import random
 import time
 from aiohttp import web
@@ -13,12 +13,10 @@ from worker import add_lead_from_promoter_task
 phone_numbers = {}
 MAX_ATTEMPTS = 3
 smsc = SMSC()
-redirect_url = Config.redirect_url
-# redirect_url = 'http://localhost:8093'
 
 
 async def sms_validator(request):
-    return aiohttp_jinja2.render_template('sms_validator/index.html', request, {'redirect_url': redirect_url})
+    return render_template('sms_validator/index.html', request, {'redirect_url': Config.redirect_url})
 
 
 async def send_sms(request):
@@ -30,11 +28,11 @@ async def send_sms(request):
         phone_numbers[phone_number] = {'code': code, 'attempts': 0, 'time_sent': int(time.time())}
         smsc.send_sms(phone_number, str(code), sender="sms")
 
-    return aiohttp_jinja2.render_template('sms_validator/verify.html', request,
+    return render_template('sms_validator/verify.html', request,
                                           {'phone_number': phone_number,
                                            'attempts': MAX_ATTEMPTS,
                                            'time_sent': phone_numbers[phone_number]['time_sent'],
-                                           'redirect_url': redirect_url})
+                                           'redirect_url': Config.redirect_url})
 
 
 async def verify_code(request):
@@ -42,23 +40,23 @@ async def verify_code(request):
     phone_number = data['phone_number']
     code = data['code']
     if phone_numbers[phone_number]['code'] == int(code):
-        raise web.HTTPSeeOther(location=f'{redirect_url}/sms_validator/form/{phone_number}')
+        raise web.HTTPSeeOther(location=f'{Config.redirect_url}/sms_validator/form/{phone_number}')
     else:
         phone_numbers[phone_number]['attempts'] += 1
         if phone_numbers[phone_number]['attempts'] >= MAX_ATTEMPTS:
-            return web.HTTPSeeOther(location=f'{redirect_url}/sms_validator')
-        return aiohttp_jinja2.render_template('sms_validator/verify.html', request,
+            return web.HTTPSeeOther(location=f'{Config.redirect_url}/sms_validator')
+        return render_template('sms_validator/verify.html', request,
                                               {'phone_number': phone_number,
                                                'attempts': MAX_ATTEMPTS - phone_numbers[phone_number]['attempts'],
                                                'time_sent': phone_numbers[phone_number]['time_sent'],
                                                'error': 'Неверный код, пожалуйста, попробуйте еще раз',
-                                               'redirect_url': redirect_url})
+                                               'redirect_url': Config.redirect_url})
 
 
 async def form(request):
-    return aiohttp_jinja2.render_template('sms_validator/form.html',
+    return render_template('sms_validator/form.html',
                                           request, {'phone_number': request.match_info['phone_number'],
-                                                    'redirect_url': redirect_url})
+                                                    'redirect_url': Config.redirect_url})
 
 
 async def submit_form(request):

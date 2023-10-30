@@ -69,5 +69,16 @@ class CustomerNotificationMedium(IntEnum):
     Email = 0
     Sms = 1
     Telegram = 2
-    WhatsApp = 3
+    WhatsApp360 = 3
+    WhatsAppTeletype = 4
+    WhatsAppTextBack = 5
+
+
+class SubscriptionStatus(IntEnum):
+    draft = 0
+    prepaid = 1
+    paid = 2
+    active = 3
+    archived = 4
+    cancelled = 5
 

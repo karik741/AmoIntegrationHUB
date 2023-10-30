@@ -64,6 +64,8 @@ class ConfigType:
     user_free_cc_tasks_holder_id = 0
     user_sales_person_id = 0
     user_admin_id = 0
+    user_admin_1_id = 0
+    user_admin_2_id = 0
     user_sales_leader_online_id = 0
     uses_sales_offl = 0
     user_technician_id = 0
@@ -132,6 +134,10 @@ class ConfigType:
     client_is_in_group_schedule_no_value_id = 0
     client_is_in_individual_schedule_yes_value_id = 0
     client_is_in_individual_schedule_no_value_id = 0
+    settings_task_type_fullpay_to_current_manager = False
+    settings_task_type_promo_retro_to_current_manager = False
+    settings_task_type_reregister_to_current_manager = False
+    db_url = 0
 
     def whitelist_enabled(self):
         return len(self.allowed_phones) > 0
@@ -194,6 +200,8 @@ class ConfigType:
         self.user_free_cc_tasks_holder_id = config['user_free_cc_tasks_holder_id']
         self.user_sales_person_id = config['user_sales_person_id']
         self.user_admin_id = config['user_admin_id']
+        self.user_admin_1_id = config['user_admin_1_id']
+        self.user_admin_2_id = config['user_admin_2_id']
         self.user_sales_leader_online_id = config['user_sales_leader_online_id']
         self.uses_sales_offl = config['uses_sales_offl']
         self.user_technician_id = config['user_technician_id']
@@ -268,6 +276,12 @@ class ConfigType:
         self.client_is_in_group_schedule_no_value_id = config['client_is_in_group_schedule_no_value_id']
         self.client_is_in_individual_schedule_yes_value_id = config['client_is_in_individual_schedule_yes_value_id']
         self.client_is_in_individual_schedule_no_value_id = config['client_is_in_individual_schedule_no_value_id']
+        self.settings_task_type_fullpay_to_current_manager = config['settings_task_type_fullpay_to_current_manager']
+        self.settings_task_type_promo_retro_to_current_manager = \
+            config['settings_task_type_promo_retro_to_current_manager']
+        self.settings_task_type_reregister_to_current_manager = \
+            config['settings_task_type_reregister_to_current_manager']
+        self.db_url = config['db_url']
 
 
 Config = ConfigType()

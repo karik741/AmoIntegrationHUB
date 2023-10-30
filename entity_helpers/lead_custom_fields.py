@@ -7,6 +7,14 @@ class Lead(_Lead):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def save(self):
+        if self.status.id > 0:
+            if self.id:
+                self.update()
+            else:
+                self.create()
+            return self
+
     utm_content = custom_field.BaseCustomField("utm_content", field_id=Config.lead_utm_content_field_id, code="UTM_CONTENT")
     utm_medium = custom_field.BaseCustomField("utm_medium", field_id=Config.lead_utm_medium_field_id, code="UTM_MEDIUM")
     utm_campaign = custom_field.BaseCustomField("utm_campaign", field_id=Config.lead_utm_campaign_field_id, code="UTM_CAMPAIGN")

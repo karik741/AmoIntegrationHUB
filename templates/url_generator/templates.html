@@ -26,16 +26,73 @@
         }
     </style>
 </head>
+
 <body>
-    <h1>Выберите шаблон</h1>
+    <div id="header" style="position: sticky; top: 0; background: white; z-index: 1000; padding: 10px; border: 3px solid #ddd;">
+        <a id="next-button" href="#">Сгенерировать ссылку</a>
+    </div>
     <ul>
     {% for template in templates.messageTemplates %}
         <li>
             <h2>{{ template.name }}</h2>
             <p>{{ template.text }}</p>
-            <a href="{{ redirect_url }}/template/{{ template.id }}">Выбрать</a>
+            <button id="template-button-{{ template.id }}" onclick="toggleTemplate('{{ template.id }}', this)">Выбрать</button>
+            <span id="template-status-{{ template.id }}"></span>
         </li>
     {% endfor %}
     </ul>
 </body>
+
+<script>
+    let selectedTemplates = [];
+    localStorage.clear()
+        // Читаем сохраненные шаблоны из localStorage если они есть
+    if(localStorage.getItem('selectedTemplates')) {
+        selectedTemplates = JSON.parse(localStorage.getItem('selectedTemplates'));
+    }
+
+    function toggleTemplate(templateId, buttonElement) {
+        let statusElement = document.getElementById('template-status-' + templateId);
+
+        if (!selectedTemplates.includes(templateId)) {
+            selectedTemplates.push(templateId);
+
+            // Устанавливаем статус шаблона в выбран и его порядковый номер
+            statusElement.textContent = 'Выбран №' + selectedTemplates.length;
+            statusElement.style.color = 'green';
+            buttonElement.textContent = 'Отменить';
+        } else {
+            // Удаляем шаблон
+            const index = selectedTemplates.indexOf(templateId);
+            selectedTemplates.splice(index, 1);
+
+            // Обновляем порядки всех шаблонов после удаленного
+            for (let i = index; i < selectedTemplates.length; i++) {
+                let currentStatusElement = document.getElementById('template-status-' + selectedTemplates[i]);
+                currentStatusElement.textContent = 'Выбран №' + (i + 1);
+            }
+
+            // Сбрасываем статус этого шаблона и обновляем кнопку
+            statusElement.textContent = '';
+            buttonElement.textContent = 'Выбрать';
+        }
+
+        // Сохраняем обновленный список шаблонов в localStorage
+        localStorage.setItem('selectedTemplates', JSON.stringify(selectedTemplates));
+
+        updateHeaderButtons();
+    }
+
+    function updateHeaderButtons() {
+        document.getElementById('next-button').href = "{{ redirect_url }}/templates/" + selectedTemplates.join('&');
+
+        if (selectedTemplates.length > 0) {
+            document.getElementById('clear-button').style.display = 'inline-block';
+        } else {
+            document.getElementById('clear-button').style.display = 'none';
+        }
+    }
+
+    updateHeaderButtons();
+</script>
 </html>

@@ -1,28 +1,43 @@
-import typing
 from typing import List
 from aiohttp import web
 from multidict import MultiDictProxy
 from aiohttp_jinja2 import setup as setup_jinja2
 from jinja2 import FileSystemLoader
+import logging
+import sys
+import json
+import urllib.parse
+import typing
 
 from config import Config
-from worker import amo_task_create_task, amo_contact_create_task, deal_changed_task, record_updated_task, \
-    contact_edit_task, set_init_code_task, wordpress_task, send_template_task, qtickets_event_task
+from worker import amo_contact_create_task, deal_changed_task, record_updated_task, contact_edit_task, \
+                   set_init_code_task, wordpress_task, send_template_task, qtickets_event_task, amo_contact_update_task
 from tasks.contact_edit import ContactData
 from tasks.deal_changed import DealData
 from tasks.record_updated import RecordData
 from tasks.lessons_updated import LessonsData, on_lessons_updated
 from tasks.wordpress import WordpressData
 from tasks.on_qtickets_event import QticketsInfo
-from url_generator.templates_url_generator import templates_url_generator, template_form, generate_link
+from url_generator.url_generator import templates_url_generator, templates_fields, generate_link
 from sms_validator.sms_validator import sms_validator, send_sms, verify_code, form, submit_form
 from sms_validator.sms_validator_admin import sms_validator_admin, get_entities, add_entity, edit_entity, \
     delete_entity, get_leads
 from sms_validator.models import Promoter, Supervisor, Location
+from push_leads.push_leads_to_amo import push_leads, on_push_leads
+from settings.settings import settings, update_settings
 
 app = web.Application()
 redirect_url = Config.redirect_url
 # redirect_url = 'http://localhost:8093'
+
+logger = logging.getLogger('app')
+logger.setLevel(logging.INFO)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 # Парсит айдишники из невероятного способа передачи вебхука из амо
@@ -48,9 +63,6 @@ def get_lead_id(body: MultiDictProxy[str | bytes]):
 
 async def amo_callback(request: web.Request):
     body = await request.post()
-    task_creations = get_ids(body, 'task', 'add')
-    for item in task_creations:
-        amo_task_create_task.delay(item)
 
     contacts_creations = get_ids(body, 'contacts', 'add')
     for item in contacts_creations:
@@ -58,7 +70,7 @@ async def amo_callback(request: web.Request):
 
     contacts_updates = get_ids(body, 'contacts', 'update')
     for item in contacts_updates:
-        amo_contact_create_task.delay(item)
+        amo_contact_update_task.delay(item)
 
     return web.Response(status=200)
 
@@ -106,11 +118,18 @@ async def set_code(request: web.Request):
 
 
 async def send_template(request: web.Request):
+    logger.info('Принят запрос')
     body = await request.post()
-    template_id = request.match_info['template_id']
-    substitutions = request.match_info['substitutions'].split('&')
+    data = request.query.get('data', '')
+    data = urllib.parse.unquote_plus(data)
+    templates = json.loads(data)
     lead_id = get_lead_id(body)
-    send_template_task.delay(template_id, substitutions, lead_id)
+    logger.info(f'Lead id: {lead_id}; Ссылка: {data}')
+    send_template_task.delay(templates, lead_id)
+    return web.Response(status=200)
+
+
+async def check_access(request: web.Request):
     return web.Response(status=200)
 
 
@@ -123,12 +142,12 @@ app.add_routes([web.post('/subscription/updated', deal_changed)])
 app.add_routes([web.post('/lesson/record_updated', record_updated)])
 app.add_routes([web.post('/lessons/updated', lessons_updated)])
 app.add_routes([web.post('/wordpress_callback', wordpress_callback)])
-app.add_routes([web.post('/send_template/{template_id}/{substitutions}', send_template)])
+app.add_routes([web.post('/send_template', send_template)])
 app.add_routes([web.post('/customer/qtickets_event', qtickets_event)])
 
 app.add_routes([web.get('/templates_url_generator', templates_url_generator)])
-app.add_routes([web.get('/template/{id}', template_form)])
-app.add_routes([web.get('/generate_link/{id}', generate_link)])
+app.add_routes([web.get('/templates/{ids}', templates_fields)])
+app.add_routes([web.post('/generate_link', generate_link)])
 
 app.add_routes([web.get('/sms_validator', sms_validator)])
 app.add_routes([web.get('/sms_validator/form/{phone_number}', form)])
@@ -153,5 +172,13 @@ app.add_routes([web.post('/sms_validator/api/edit_location', lambda request: edi
 app.add_routes([web.post('/sms_validator/api/delete_supervisor', lambda request: delete_entity(request, Supervisor))])
 app.add_routes([web.post('/sms_validator/api/delete_promoter', lambda request: delete_entity(request, Promoter))])
 app.add_routes([web.post('/sms_validator/api/delete_location', lambda request: delete_entity(request, Location))])
+
+app.add_routes([web.get('/push_leads', push_leads)])
+app.add_routes([web.post('/push_leads/api/send', on_push_leads)])
+
+app.add_routes([web.get('/settings', settings)])
+app.add_routes([web.post('/settings/api/submit', update_settings)])
+
+app.add_routes([web.get('/check_access', check_access)])
 
 web.run_app(app, port=Config.web_port)
