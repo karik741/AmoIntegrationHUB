@@ -1,7 +1,8 @@
 import re
 import typing
 
-from amocrm.v2 import Contact as ContactBase, Lead, tokens
+from amocrm.v2 import Contact as ContactBase, Lead
+from amocrm.v2.links import LinksInteraction
 from amocrm.v2.entity import custom_field
 
 from config import Config
@@ -120,6 +121,31 @@ class IsInScheduleIndividualValues:
     no = custom_field.SelectValue(id=Config.client_is_in_individual_schedule_no_value_id, value='Нет')
 
 
+class HasPaidActiveNotUsedSubscription:
+    yes = custom_field.SelectValue(id=Config.has_paid_active_not_used_subscription_yes_value_id, value='Да')
+    no = custom_field.SelectValue(id=Config.has_paid_active_not_used_subscription_no_value_id, value='Нет')
+
+
+class HasPaidActiveSubscriptionWithRemainingUnits:
+    yes = custom_field.SelectValue(id=Config.has_paid_active_subscription_with_remaining_units_yes_value_id, value='Да')
+    no = custom_field.SelectValue(id=Config.has_paid_active_subscription_with_remaining_units_no_value_id, value='Нет')
+
+
+class HasPaidArchiveSubscriptionWithRemainingUnits:
+    yes = custom_field.SelectValue(id=Config.has_paid_archive_subscription_with_remaining_units_yes_value_id, value='Да')
+    no = custom_field.SelectValue(id=Config.has_paid_archive_subscription_with_remaining_units_no_value_id, value='Нет')
+
+
+class HasPaidPromoVisitedLesson:
+    yes = custom_field.SelectValue(id=Config.has_paid_promo_visited_lesson_yes_value_id, value='Да')
+    no = custom_field.SelectValue(id=Config.has_paid_promo_visited_lesson_no_value_id, value='Нет')
+
+
+class HasFreePromoVisitedLesson:
+    yes = custom_field.SelectValue(id=Config.has_free_promo_visited_lesson_yes_id, value='Да')
+    no = custom_field.SelectValue(id=Config.has_free_promo_visited_lesson_no_id, value='Нет')
+
+
 class Contact(ContactBase):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -188,6 +214,80 @@ class Contact(ContactBase):
     last_visited_trial_lesson_teacher = \
         custom_field.TextCustomField("", field_id=Config.client_last_visited_trial_lesson_teacher_field_id)
 
+
+    # новые поля
+    last_paid_lesson_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_lesson_date_id)
+    last_paid_future_lesson_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_future_lesson_date_id)
+    last_paid_visited_lesson_date= \
+        custom_field.DateCustomField("", field_id=Config.last_paid_visited_lesson_date_id)
+    last_paid_visited_subject_name = \
+        custom_field.TextCustomField("", field_id=Config.last_paid_visited_subject_name_id)
+    last_paid_visited_teacher_name = \
+        custom_field.TextCustomField("", field_id=Config.last_paid_visited_teacher_name_id)
+    count_paid_full_paid_subscriptions = \
+        custom_field.NumericCustomField("", field_id=Config.count_paid_full_paid_subscriptions_id)
+    last_paid_full_paid_subscription_last_payment_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_full_paid_subscription_last_payment_date_id)
+    last_paid_full_paid_subscription_last_payment_sum = \
+        custom_field.NumericCustomField("", field_id=Config.last_paid_full_paid_subscription_last_payment_sum_id)
+    last_paid_full_paid_subscription_subject_names = \
+        custom_field.TextAreaCustomField("", field_id=Config.last_paid_full_paid_subscription_subject_names_id)
+    count_paid_partially_paid_subscriptions = \
+        custom_field.NumericCustomField("", field_id=Config.count_paid_partially_paid_subscriptions_id)
+    last_paid_partially_paid_subscription_last_payment_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_partially_paid_subscription_last_payment_date_id)
+    count_paid_active_subscriptions = \
+        custom_field.NumericCustomField("", field_id=Config.count_paid_active_subscriptions_id)
+
+    has_paid_active_not_used_subscription = \
+        custom_field.SelectCustomField("",
+                                     field_id=Config.has_paid_active_not_used_subscription_id,
+                                     enums=HasPaidActiveNotUsedSubscription)
+
+    has_paid_active_subscription_with_remaining_units = \
+        custom_field.SelectCustomField("",
+                                     field_id=Config.has_paid_active_subscription_with_remaining_units_id,
+                                     enums=HasPaidActiveSubscriptionWithRemainingUnits)
+
+    has_paid_archive_subscription_with_remaining_units = \
+        custom_field.SelectCustomField("",
+                                     field_id=Config.has_paid_archive_subscription_with_remaining_units_id,
+                                     enums=HasPaidArchiveSubscriptionWithRemainingUnits)
+
+    has_paid_promo_visited_lesson = \
+        custom_field.SelectCustomField("",
+                                     field_id=Config.has_paid_promo_visited_lesson_id,
+                                     enums=HasPaidPromoVisitedLesson)
+
+    last_paid_promo_visited_lesson_visit_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_promo_visited_lesson_visit_date_id)
+    last_paid_promo_visited_lesson_subject_name = \
+        custom_field.TextCustomField("", field_id=Config.last_paid_promo_visited_lesson_subject_name_id)
+    last_paid_promo_visited_lesson_teacher_name = \
+        custom_field.TextCustomField("", field_id=Config.last_paid_promo_visited_lesson_teacher_name_id)
+    count_paid_promo_full_paid_subscriptions = \
+        custom_field.NumericCustomField("", field_id=Config.count_paid_promo_full_paid_subscriptions_id)
+    count_paid_promo_active_subscriptions = \
+        custom_field.NumericCustomField("", field_id=Config.count_paid_promo_active_subscriptions_id)
+    last_paid_promo_full_paid_subscription_last_payment_date = \
+        custom_field.DateCustomField("", field_id=Config.last_paid_promo_full_paid_subscription_last_payment_date_id)
+    last_paid_promo_full_paid_subscription_subject_names = \
+        custom_field.TextAreaCustomField("", field_id=Config.last_paid_promo_full_paid_subscription_subject_names_id)
+
+    has_free_promo_visited_lesson = \
+        custom_field.SelectCustomField("",
+                                     field_id=Config.has_free_promo_visited_lesson_id,
+                                     enums=HasFreePromoVisitedLesson)
+
+    last_free_promo_visited_lesson_visit_date = \
+        custom_field.DateCustomField("", field_id=Config.last_free_promo_visited_lesson_visit_date_id)
+    last_free_promo_visited_lesson_subject_name = \
+        custom_field.TextCustomField("", field_id=Config.last_free_promo_visited_lesson_subject_name_id)
+    last_free_promo_visited_lesson_teacher_name = \
+        custom_field.TextCustomField("", field_id=Config.last_free_promo_visited_lesson_teacher_name_id)
+
     def primary_leads(self):
         return [x for x in self.leads_loaded
                 if x.pipeline.id == Config.primary_leads_pipeline_id and x.status.id not in lead_statuses_to_skip]
@@ -198,3 +298,7 @@ class Contact(ContactBase):
 
     def primary_and_secondary_leads(self):
         return [x for x in self.leads_loaded if x.status.id not in lead_statuses_to_skip]
+
+class CustomLinksInteraction(LinksInteraction):
+    def unlink(self, for_entity, to_entity):
+        return self._set("unlink", for_entity, to_entity)

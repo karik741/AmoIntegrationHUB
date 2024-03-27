@@ -1,11 +1,14 @@
 from typing import TypedDict
+from asgiref.sync import async_to_sync
 
 from amocrm.v2.exceptions import NotFound
+
 from entity_helpers.lead_custom_fields import Lead
 from config import Config
-from entity_helpers.contact_search import find_contact_by_docrm_data, Contact, VisitedTrialValues, HasPrepaidValues, \
-    HasFullPaidValues, IsInScheduleGroupValues, IsInScheduleIndividualValues, HasActiveIndividualDealValues, \
-    HasActiveGroupDealValues
+from entity_helpers.contact_search import find_contact_by_docrm_data, Contact, HasPaidActiveNotUsedSubscription, \
+    HasPaidActiveSubscriptionWithRemainingUnits, \
+    HasPaidArchiveSubscriptionWithRemainingUnits, HasPaidPromoVisitedLesson, HasFreePromoVisitedLesson, find_contacts
+from tasks.amo_contact_create import update_or_create_contact
 from time_helpers import Instant, time_for_amo
 
 
@@ -19,25 +22,13 @@ class ContactData(TypedDict):
     url: str
     leadSubject: str | None
     crmSegment: str | None
-    visitedTrialLesson: bool | None
     lastVisitTrialLessonDate: Instant | None
     lastVisitTrialLessonDirection: str | None
     lastVisitTrialLessonTeacherId: str | None
     lastVisitTrialLessonTeacher: str | None
-    hasPrepaid: bool
     lastPrepaidDate: Instant | None
     lastPrepaidSum: float | None
-    hasFullPaid: bool
-    fullPaidDate: Instant | None
-    lastDealPaidSum: float | None
-    paidGroupDealCount: int | None
-    paidIndividualDealCount: int | None
-    paidSumFull: float | None
     hasActiveGroupDeal: bool | None
-    hasActiveIndividualDeal: bool | None
-    isInScheduleGroup: bool | None
-    isInScheduleIndividual: bool | None
-    lastGroupDealEndDate: Instant | None
     remainedGroupLessonsCount: int | None
     remainedIndividualLessonsCount: int | None
     lastGroupLessonVisitDate: Instant | None
@@ -46,9 +37,36 @@ class ContactData(TypedDict):
     lastIndividualLessonVisitDate: Instant | None
     lastIndividualVisitTeacher: str | None
     lastCancelledRecordDate: Instant | None
-    lastRecordInCardDate: Instant | None
     lastReceiveTime: Instant | None
     segmentId: str | None
+
+    lastPaidLessonDate: Instant | None
+    lastPaidFutureLessonDate: Instant | None
+    lastPaidVisitedLessonVisitDate: Instant | None
+    lastPaidVisitedLessonSubjectName: str | None
+    lastPaidVisitedLessonTeacherName: str | None
+    countPaidFullPaidSubscriptions: int | None
+    lastPaidFullPaidSubscriptionLastPaymentDate: Instant | None
+    lastPaidFullPaidSubscriptionLastPaymentSum: float | None
+    lastPaidFullPaidSubscriptionSubjectNames: list
+    countPaidPartiallyPaidSubscriptions: int
+    lastPaidPartiallyPaidSubscriptionLastPaymentDate: Instant | None
+    countPaidActiveSubscriptions: int
+    hasPaidActiveNotUsedSubscription: bool
+    hasPaidActiveSubscriptionWithRemainingUnits: bool
+    hasPaidArchiveSubscriptionWithRemainingUnits: bool
+    hasPaidPromoVisitedLesson: bool
+    lastPaidPromoVisitedLessonVisitDate: Instant | None
+    lastPaidPromoVisitedLessonSubjectName: str | None
+    lastPaidPromoVisitedLessonTeacherName: str | None
+    countPaidPromoFullPaidSubscriptions: int
+    countPaidPromoActiveSubscriptions: int
+    lastPaidPromoFullPaidSubscriptionLastPaymentDate: Instant | None
+    lastPaidPromoFullPaidSubscriptionSubjectNames: list
+    hasFreePromoVisitedLesson: bool
+    lastFreePromoVisitedLessonVisitDate: Instant | None
+    lastFreePromoVisitedLessonSubjectName: str | None
+    lastFreePromoVisitedLessonTeacherName: str | None
 
 
 def on_contact_edit(contact_data: ContactData):
@@ -60,11 +78,19 @@ def on_contact_edit(contact_data: ContactData):
         print(f'Контакт с id {contact_data["amoId"]} не найден')
 
     if not contact:
-        contact = find_contact_by_docrm_data(contact_data["id"], contact_data["phone"])
+        print(f'Поиск контакта по docrm_id {contact_data["id"]} и по номеру телефона {contact_data["phone"]}')
+        if contact_data['phone'] == "Используется номер другого клиента":
+            contact = find_contacts(contact_data["id"])
+        else:
+            contact = find_contact_by_docrm_data(contact_data["id"], contact_data["phone"])
+        if contact:
+            print('Контакт найден, отправляем в DoCRM')
+            async_to_sync(update_or_create_contact)(contact)
 
     need_to_create_lead = False
     if not contact:
         if not Config.whitelist_enabled():
+            print(f"Не нашли контакт по номеру {contact_data['phone']} - создаем новый контакт")
             contact = Contact()
             need_to_create_lead = True
         else:
@@ -88,84 +114,123 @@ def on_contact_edit(contact_data: ContactData):
     if contact_data['url']:
         contact.doCRM_url = contact_data['url']
 
-    if contact_data['lastVisitTrialLessonDate']:
-        contact.last_visited_trial_lesson_date = time_for_amo(contact_data['lastVisitTrialLessonDate'])
-
-    if contact_data['lastVisitTrialLessonDirection']:
-        contact.last_visited_trial_lesson_direction = contact_data['lastVisitTrialLessonDirection']
-
-    if contact_data['lastVisitTrialLessonTeacher'] is not None:
-        contact.last_visited_trial_lesson_teacher = contact_data['lastVisitTrialLessonTeacher']
-
-    if contact_data['fullPaidDate'] is not None:
-        contact.full_paid_date = time_for_amo(contact_data['fullPaidDate'])
-
-    if contact_data['lastDealPaidSum']:
-        contact.last_deal_paid_sum = contact_data['lastDealPaidSum']
-
-    if contact_data['paidGroupDealCount']:
-        contact.paid_group_count = contact_data['paidGroupDealCount']
-
-    if contact_data['paidSumFull']:
-        contact.paid_sum_full = contact_data['paidSumFull']
-
-    if contact_data['paidIndividualDealCount']:
-        contact.paid_individual_count = contact_data['paidIndividualDealCount']
-
-    if contact_data['lastGroupDealEndDate']:
-        contact.last_group_deal_end_date = time_for_amo(contact_data['lastGroupDealEndDate'])
-
-    if contact_data['remainedGroupLessonsCount']:
+    if contact_data['remainedGroupLessonsCount'] is not None:
         contact.remained_group_lesson_count = contact_data['remainedGroupLessonsCount']
 
-    if contact_data['remainedIndividualLessonsCount']:
+    if contact_data['remainedIndividualLessonsCount'] is not None:
         contact.remained_individual_lesson_count = contact_data['remainedIndividualLessonsCount']
 
-    if contact_data['lastGroupLessonVisitDate']:
+    if contact_data['lastGroupLessonVisitDate'] is not None:
         contact.last_group_lesson_visit_date = time_for_amo(contact_data['lastGroupLessonVisitDate'])
 
-    if contact_data['lastGroupLessonVisitDirection']:
+    if contact_data['lastGroupLessonVisitDirection'] is not None:
         contact.last_group_lesson_visit_direction = contact_data['lastGroupLessonVisitDirection']
 
     if contact_data['lastGroupLessonVisitTeacher'] is not None:
         contact.last_group_lesson_visit_teacher = contact_data['lastGroupLessonVisitTeacher']
 
-    if contact_data['lastCancelledRecordDate']:
+    if contact_data['lastCancelledRecordDate'] is not None:
         contact.last_cancelled_record_date = time_for_amo(contact_data['lastCancelledRecordDate'])
-
-    if contact_data['lastRecordInCardDate']:
-        contact.last_record_date = time_for_amo(contact_data['lastRecordInCardDate'])
 
     if contact_data['lastReceiveTime'] is not None:
         contact.last_receive_time = time_for_amo(contact_data['lastReceiveTime'])
 
-    if contact_data['visitedTrialLesson'] is not None:
-        contact.visited_trial_lesson = VisitedTrialValues.yes \
-            if contact_data['visitedTrialLesson'] else VisitedTrialValues.no
+    # новые поля
+    if contact_data['lastPaidLessonDate'] is not None:
+        contact.last_paid_lesson_date = time_for_amo(contact_data['lastPaidLessonDate'])
 
-    if contact_data['hasPrepaid'] is not None:
-        contact.has_prepaid = HasPrepaidValues.yes \
-            if contact_data['hasPrepaid'] else HasPrepaidValues.no
-    #
-    if contact_data['hasFullPaid'] is not None:
-        contact.has_full_paid = HasFullPaidValues.yes \
-            if contact_data['hasFullPaid'] else HasFullPaidValues.no
+    if contact_data['lastPaidFutureLessonDate'] is not None:
+        contact.last_paid_future_lesson_date = time_for_amo(contact_data['lastPaidFutureLessonDate'])
 
-    if contact_data['hasActiveGroupDeal'] is not None:
-        contact.has_active_group_deal = HasActiveGroupDealValues.yes \
-            if contact_data['hasActiveGroupDeal'] else HasActiveGroupDealValues.no
+    if contact_data['lastPaidVisitedLessonVisitDate'] is not None:
+        contact.last_paid_visited_lesson_date = time_for_amo(contact_data['lastPaidVisitedLessonVisitDate'])
 
-    if contact_data['hasActiveIndividualDeal'] is not None:
-        contact.has_active_individual_deal = HasActiveIndividualDealValues.yes \
-            if contact_data['hasActiveIndividualDeal'] else HasActiveIndividualDealValues.no
+    if contact_data['lastPaidVisitedLessonSubjectName'] is not None:
+        contact.last_paid_visited_subject_name = contact_data['lastPaidVisitedLessonSubjectName']
 
-    if contact_data['isInScheduleGroup'] is not None:
-        contact.is_in_schedule_group = IsInScheduleGroupValues.yes \
-            if contact_data['isInScheduleGroup'] else IsInScheduleGroupValues.no
+    if contact_data['lastPaidVisitedLessonTeacherName'] is not None:
+        contact.last_paid_visited_teacher_name = contact_data['lastPaidVisitedLessonTeacherName']
 
-    if contact_data['isInScheduleIndividual'] is not None:
-        contact.is_in_schedule_individual = IsInScheduleIndividualValues.yes \
-            if contact_data['isInScheduleIndividual'] else IsInScheduleIndividualValues.no
+    if contact_data['countPaidFullPaidSubscriptions'] is not None:
+        contact.count_paid_full_paid_subscriptions = contact_data['countPaidFullPaidSubscriptions']
+
+    if contact_data['lastPaidFullPaidSubscriptionLastPaymentDate'] is not None:
+        contact.last_paid_full_paid_subscription_last_payment_date = \
+            time_for_amo(contact_data['lastPaidFullPaidSubscriptionLastPaymentDate'])
+
+    if contact_data['lastPaidFullPaidSubscriptionLastPaymentSum'] is not None:
+        contact.last_paid_full_paid_subscription_last_payment_sum =\
+            contact_data['lastPaidFullPaidSubscriptionLastPaymentSum']
+
+    if contact_data['lastPaidFullPaidSubscriptionSubjectNames'] is not None:
+        contact.last_paid_full_paid_subscription_subject_names = contact_data['lastPaidFullPaidSubscriptionSubjectNames']
+
+    if contact_data['countPaidPartiallyPaidSubscriptions'] is not None:
+        contact.count_paid_partially_paid_subscriptions = contact_data['countPaidPartiallyPaidSubscriptions']
+
+    if contact_data['lastPaidPartiallyPaidSubscriptionLastPaymentDate'] is not None:
+        contact.last_paid_partially_paid_subscription_last_payment_date = \
+            time_for_amo(contact_data['lastPaidPartiallyPaidSubscriptionLastPaymentDate'])
+
+    if contact_data['countPaidActiveSubscriptions'] is not None:
+        contact.count_paid_active_subscriptions = contact_data['countPaidActiveSubscriptions']
+
+    if contact_data['hasPaidActiveNotUsedSubscription'] is not None:
+        contact.has_paid_active_not_used_subscription = HasPaidActiveNotUsedSubscription.yes \
+        if contact_data['hasPaidActiveNotUsedSubscription'] else HasPaidActiveNotUsedSubscription.no
+
+    if contact_data['hasPaidActiveSubscriptionWithRemainingUnits'] is not None:
+        contact.has_paid_active_subscription_with_remaining_units = HasPaidActiveSubscriptionWithRemainingUnits.yes \
+        if contact_data['hasPaidActiveSubscriptionWithRemainingUnits'] else \
+            HasPaidActiveSubscriptionWithRemainingUnits.no
+
+    if contact_data['hasPaidArchiveSubscriptionWithRemainingUnits'] is not None:
+        contact.has_paid_archive_subscription_with_remaining_units = HasPaidArchiveSubscriptionWithRemainingUnits.yes \
+        if contact_data['hasPaidArchiveSubscriptionWithRemainingUnits'] else \
+            HasPaidArchiveSubscriptionWithRemainingUnits.no
+
+    if contact_data['hasPaidPromoVisitedLesson'] is not None:
+        contact.has_paid_promo_visited_lesson = HasPaidPromoVisitedLesson.yes \
+        if contact_data['hasPaidPromoVisitedLesson'] else HasPaidPromoVisitedLesson.no
+
+    if contact_data['lastPaidPromoVisitedLessonVisitDate'] is not None:
+        contact.last_paid_promo_visited_lesson_visit_date = \
+            time_for_amo(contact_data['lastPaidPromoVisitedLessonVisitDate'])
+
+    if contact_data['lastPaidPromoVisitedLessonSubjectName'] is not None:
+        contact.last_paid_promo_visited_lesson_subject_name = contact_data['lastPaidPromoVisitedLessonSubjectName']
+
+    if contact_data['lastPaidPromoVisitedLessonTeacherName'] is not None:
+        contact.last_paid_promo_visited_lesson_teacher_name = contact_data['lastPaidPromoVisitedLessonTeacherName']
+
+    if contact_data['countPaidPromoFullPaidSubscriptions'] is not None:
+        contact.count_paid_promo_full_paid_subscriptions = contact_data['countPaidPromoFullPaidSubscriptions']
+
+    if contact_data['countPaidPromoActiveSubscriptions'] is not None:
+        contact.count_paid_promo_active_subscriptions = contact_data['countPaidPromoActiveSubscriptions']
+
+    if contact_data['lastPaidPromoFullPaidSubscriptionLastPaymentDate'] is not None:
+        contact.last_paid_promo_full_paid_subscription_last_payment_date = \
+            time_for_amo(contact_data['lastPaidPromoFullPaidSubscriptionLastPaymentDate'])
+
+    if contact_data['lastPaidPromoFullPaidSubscriptionSubjectNames'] is not None:
+        contact.last_paid_promo_full_paid_subscription_subject_names = \
+            contact_data['lastPaidPromoFullPaidSubscriptionSubjectNames']
+
+    if contact_data['hasFreePromoVisitedLesson'] is not None:
+        contact.has_free_promo_visited_lesson = HasFreePromoVisitedLesson.yes \
+        if contact_data['hasFreePromoVisitedLesson'] else HasFreePromoVisitedLesson.no
+
+    if contact_data['lastFreePromoVisitedLessonVisitDate'] is not None:
+        contact.last_free_promo_visited_lesson_visit_date = \
+            time_for_amo(contact_data['lastFreePromoVisitedLessonVisitDate'])
+
+    if contact_data['lastFreePromoVisitedLessonSubjectName'] is not None:
+        contact.last_free_promo_visited_lesson_subject_name = contact_data['lastFreePromoVisitedLessonSubjectName']
+
+    if contact_data['lastFreePromoVisitedLessonTeacherName'] is not None:
+        contact.last_free_promo_visited_lesson_teacher_name = contact_data['lastFreePromoVisitedLessonTeacherName']
+
 
     # if contact_data['crmSegment'] is not None:
     #     lead = contact.leads_loaded[0]

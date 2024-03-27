@@ -85,6 +85,9 @@ def on_deal_changed(deal_data: DealData):
             return
 
     if deal_data['subscriptionStatus'] == SubscriptionStatus.archived:
+        print(f'Абонемент стал архивным.\n'
+              f'Телефон клиента: {docrm_phone}'
+              f'ID клиента {docrm_id}')
         leads = contact.primary_and_secondary_leads()
         process_archived(contact, deal_data, leads)
 
@@ -142,7 +145,7 @@ def process_event_deal(contact: Contact, deal_data: DealData):
         contact_tags = ['НЕ студент школы купил билет на концерт']
         create_tags(contact, contact_tags, access_token)
         create_tags(lead, lead_tags, access_token)
-    lead.roistat = "лид с концерта"
+    lead.roistat_user = "лид с концерта"
     lead.save()
 
 
@@ -233,7 +236,7 @@ def create_paid_promo_task(deal_data: DealData, lead: Lead):
     new_task.entity_id = lead.id
     new_task.entity_type = 'leads'
     new_task.task_type_id = Config.task_type_cc_promo_register_value_id
-    new_task.responsible_user = Config.user_admin_2_id
+    new_task.responsible_user = Config.user_free_cc_tasks_holder_id
     new_task.complete_till = datetime.now() + timedelta(seconds=60)
     new_task.save()
 
@@ -487,7 +490,10 @@ def deal_program_type(deal_data: DealData):
 
 def is_not_payment(deal_data: DealData):
     timestamp = int(time.time())
-    return timestamp - unix_time(deal_data['payments'][0]['when']) > 600
+    if len(deal_data['payments']) > 0:
+        return timestamp - unix_time(deal_data['payments'][0]['when']) > 600
+    else:
+        return True
 
 
 def complete_tasks(lead: Lead, task_type: int, result_text: str):

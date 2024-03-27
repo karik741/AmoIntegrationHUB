@@ -1,9 +1,13 @@
-from typing import TypedDict
+from typing import TypedDict, List
 
 from time_helpers import Instant
 from entity_helpers.enums import ProgramType
 from config import Config
 from worker import create_and_save_task_task
+
+class CustomerData(TypedDict):
+    customerId: str
+    phoneNumber: str
 
 
 class Lessons(TypedDict):
@@ -17,17 +21,17 @@ class Lessons(TypedDict):
     programName: str
     durationInMinutes: int
     isIndividual: bool
-    customers: list[str]
+    customers: List[CustomerData]
 
 
 class LessonsData(TypedDict):
-    lessons: list[Lessons]
+    lessons: List[Lessons]
 
 
 def on_lessons_updated(lessons_data: LessonsData):
     if Config.use_confirmation_tasks:
         for lesson in lessons_data['lessons']:
             if lesson['programType'] == ProgramType.paid:
-                for customer_id in lesson['customers']:
-                    create_and_save_task_task.delay(lesson, customer_id)
+                for customer_data in lesson['customers']:
+                    create_and_save_task_task.delay(lesson, customer_data['phoneNumber'])
 

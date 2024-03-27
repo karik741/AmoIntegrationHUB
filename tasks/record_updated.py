@@ -105,7 +105,7 @@ def record_updated_process(record_data: RecordData, contact: Contact, lesson_tim
         student_cancelled_process(record_data, contact, lesson_time, leads, record_status_for_amo)
 
     if record_status_for_amo == RecordStatus.came_event:
-        student_came_event_process(lesson_time, leads)
+        student_came_event_process(lesson_time, leads, contact)
 
 
 def student_registered_on_lesson_process(record_data: RecordData, contact: Contact, lesson_time, leads: List[Lead]):
@@ -177,6 +177,7 @@ def student_marked_free_promo_process(record_data: RecordData, contact: Contact,
 def student_marked_paid_promo_process(record_data: RecordData, contact: Contact, lesson_time, leads: List[Lead],
                                       record_status_for_amo: RecordStatus):
     lead = choose_lead_for_paid_promo(leads, record_data)
+
     create_task_after_promo(contact, lead, record_status_for_amo == RecordStatus.came_paid_promo,
                             record_data, lesson_time)
     if lead is not None:
@@ -204,7 +205,7 @@ def student_cancelled_process(record_data: RecordData, contact: Contact, lesson_
                 record_status_for_amo == RecordStatus.cancelled_free_promo:
             new_task.task_type_id = Config.task_type_cc_promo_reregister_value_id
             new_task.responsible_user = lead.responsible_user.id \
-                if Config.settings_task_type_reregister_to_current_manager else Config.user_admin_2_id
+                if Config.settings_task_type_reregister_to_current_manager else Config.user_free_cc_tasks_holder_id
 
         else:
             new_task.task_type_id = Config.task_type_register_new_value_id
@@ -235,16 +236,17 @@ def student_cancelled_process(record_data: RecordData, contact: Contact, lesson_
             lead.save()
 
 
-def student_came_event_process(lesson_time, leads: List[Lead]):
-    lead = choose_lead_for_event(leads)
+def student_came_event_process(lesson_time, leads: List[Lead], contact: Contact):
+    lead = choose_lead_for_event(leads, contact)
     lead.status = Config.lead_status_came_event
+    lead.save()
     lead.notes.objects.create(
         note_type='common',
         params={
             "text": f'Посетил концерт {datetime.utcfromtimestamp(lesson_time).strftime("%d.%m.%Y")} '
         }
     )
-    lead.save()
+    lead.contacts.append(contact, False)
 
 
 def create_task_after_promo(contact: Contact, lead: Lead, came: bool, record_data: RecordData, lesson_time: int):
@@ -263,7 +265,7 @@ def create_task_after_promo(contact: Contact, lead: Lead, came: bool, record_dat
     else:
         new_task.task_type_id = Config.task_type_cc_promo_reregister_value_id
         new_task.responsible_user = lead.responsible_user.id if Config.settings_task_type_promo_retro_to_current_manager \
-            else Config.user_admin_2_id
+            else Config.user_free_cc_tasks_holder_id
         came_text = "ПЕРЕЗАПИСАТЬ!"
 
     new_task.text = f'{"Посетил" if came else "Пропустил"} ' \
@@ -362,11 +364,11 @@ def choose_lead_for_paid_promo(leads: list[Lead], record_data: RecordData):
     return
 
 
-def choose_lead_for_event(leads: list[Lead]):
+def choose_lead_for_event(leads: list[Lead], contact: Contact):
     for lead in leads:
         if lead.pipeline.id == Config.event_leads_pipeline_id:
             return lead
-
+    print(f'Попытка прикрепить контакт {contact.id} к лиду - посмотри че там как')
     return Lead()
 
 

@@ -8,10 +8,14 @@ import sys
 import json
 import urllib.parse
 import typing
+from datetime import datetime, timedelta
+import asyncio
+
 
 from config import Config
 from worker import amo_contact_create_task, deal_changed_task, record_updated_task, contact_edit_task, \
-                   set_init_code_task, wordpress_task, send_template_task, qtickets_event_task, amo_contact_update_task
+                   set_init_code_task, wordpress_task, send_template_task, qtickets_event_task, \
+                   amo_contact_update_task, contact_edit_from_hf_task, ai_confirmation_task
 from tasks.contact_edit import ContactData
 from tasks.deal_changed import DealData
 from tasks.record_updated import RecordData
@@ -25,6 +29,7 @@ from sms_validator.sms_validator_admin import sms_validator_admin, get_entities,
 from sms_validator.models import Promoter, Supervisor, Location
 from push_leads.push_leads_to_amo import push_leads, on_push_leads
 from settings.settings import settings, update_settings
+from entity_helpers.amo_init import init_tokens
 
 app = web.Application()
 redirect_url = Config.redirect_url
@@ -39,6 +44,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+last_call = {"phone": None, "date": datetime.now()}
 
 # Парсит айдишники из невероятного способа передачи вебхука из амо
 def get_ids(body: MultiDictProxy[str | bytes], entity_type: str, action_type: str):
@@ -90,6 +96,7 @@ async def record_updated(request: web.Request):
 async def lessons_updated(request: web.Request):
     body = await request.json()
     on_lessons_updated(typing.cast(LessonsData, body))
+
     return web.json_response({"result": True, "error": None})
 
 
@@ -105,9 +112,36 @@ async def qtickets_event(request: web.Request):
     return web.json_response({"result": True, "error": None})
 
 
+async def handle_duplicate(phone, body):
+    # Ждем 3 секунды
+    await asyncio.sleep(5)
+    # Повторно вызываем функцию обработки
+    await contact_edit_internal(phone, body)
+
+
+async def contact_edit_internal(phone, body):
+    global last_call
+    current_time = datetime.now()
+
+    if phone == last_call["phone"] and current_time - last_call["date"] < timedelta(seconds=1):
+        # Запускаем функцию для обработки дубликата
+        asyncio.create_task(handle_duplicate(phone, body))
+        return
+
+    last_call["phone"] = phone
+    last_call["date"] = current_time
+
+    # Основная логика обработки запроса
+    if body['metadata'] == "isUpdatedFromJob":
+        contact_edit_from_hf_task.delay(typing.cast(ContactData, body))
+    else:
+        contact_edit_task.delay(typing.cast(ContactData, body))
+
+
 async def contact_edit(request: web.Request):
     body = await request.json()
-    contact_edit_task.delay(typing.cast(ContactData, body[0]))
+    phone = body[0]['phone']
+    await contact_edit_internal(phone, body[0])
     return web.json_response({"result": [True], "error": [""]})
 
 
@@ -126,6 +160,14 @@ async def send_template(request: web.Request):
     lead_id = get_lead_id(body)
     logger.info(f'Lead id: {lead_id}; Ссылка: {data}')
     send_template_task.delay(templates, lead_id)
+    return web.Response(status=200)
+
+
+async def ai_confirmation(request: web.Request):
+    logger.info('запрос')
+    body = await request.json()
+    logger.info(body)
+    ai_confirmation_task.delay(body)
     return web.Response(status=200)
 
 
@@ -176,9 +218,12 @@ app.add_routes([web.post('/sms_validator/api/delete_location', lambda request: d
 app.add_routes([web.get('/push_leads', push_leads)])
 app.add_routes([web.post('/push_leads/api/send', on_push_leads)])
 
+app.add_routes([web.post('/message/accept_lesson', ai_confirmation)])
+
 app.add_routes([web.get('/settings', settings)])
 app.add_routes([web.post('/settings/api/submit', update_settings)])
 
 app.add_routes([web.get('/check_access', check_access)])
 
+init_tokens()
 web.run_app(app, port=Config.web_port)

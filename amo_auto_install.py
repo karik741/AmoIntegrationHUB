@@ -19,7 +19,7 @@ def create_all():
     create_task_types()
     get_user_id()
     create_lead_custom_fields(access_token)
-    create_contact_custom_fields(access_token)
+    # create_contact_custom_fields(access_token)
 
 
 def create_primary_pipeline():
@@ -108,6 +108,126 @@ def create_event_pipeline():
     Config.event_leads_pipeline_id = event_pipeline.id
     Config.lead_status_payed_ticket = event_pipeline.statuses[1].id
     Config.lead_status_came_event = 142
+
+
+def create_new_contact_custom_fields(access_token: str):
+    fields = [
+        {"name": "Дата последней записи на ПУ", "type": "date", "sort": 34},
+        {"name": "Дата записи на ближайший ПУ", "type": "date", "sort": 35},
+        {"name": "Дата последнего визита на ПУ", "type": "date", "sort": 36},
+        {"name": "Направление последнего визита на ПУ", "type": "text", "sort": 37},
+        {"name": "Педагог последнего визита на ПУ", "type": "text", "sort": 38},
+        {"name": "Количество ПО аб ПУ", "type": "numeric", "sort": 39},
+        {"name": "Дата последней ПО аб ПУ", "type": "date", "sort": 40},
+        {"name": "Сумма посл ПО аб ПУ", "type": "numeric", "sort": 41},
+        {"name": "Направление последнего ПО аб ПУ", "type": "textarea", "sort": 42},
+        {"name": "Кол-во всех ЧО аб ПУ", "type": "numeric", "sort": 43},
+        {"name": "Дата последней ЧО по аб ПУ", "type": "date", "sort": 44},
+        {"name": "Кол-во актив аб ПУ", "type": "numeric", "sort": 45},
+
+        {"name": "Есть аб ПУ без записей", "type": "select", "sort": 46, "enums": [
+            {"value": "Да", "sort": 1},
+            {"value": "Нет", "sort": 2}]},
+
+        {"name": "Есть аб ПУ с уроками без записи", "type": "select", "sort": 47, "enums": [
+            {"value": "Да", "sort": 1},
+            {"value": "Нет", "sort": 2}]},
+
+        {"name": "Есть архивные аб ПУ с уроками", "type": "select", "sort": 48, "enums": [
+            {"value": "Да", "sort": 1},
+            {"value": "Нет", "sort": 2}]},
+
+        {"name": "Был посещен ПП", "type": "select", "sort": 49, "enums": [
+            {"value": "Да", "sort": 1},
+            {"value": "Нет", "sort": 2}]},
+
+        {"name": "Дата последнего визита на ПП", "type": "date", "sort": 50},
+        {"name": "Направление последнего ПП", "type": "text", "sort": 51},
+        {"name": "Педагог последнего ПП", "type": "text", "sort": 52},
+        {"name": "Кол-во ПО аб ПП", "type": "numeric", "sort": 53},
+        {"name": "Кол-во активн аб ПП", "type": "numeric", "sort": 54},
+        {"name": "Дата оплаты последнего аб ПП", "type": "date", "sort": 55},
+        {"name": "Направление последнего ПО аб ПП", "type": "textarea", "sort": 56},
+
+        {"name": "Был посещен БП", "type": "select", "sort": 57, "enums": [
+            {"value": "Да", "sort": 1},
+            {"value": "Нет", "sort": 2}]},
+
+        {"name": "Дата последнего визита на БП", "type": "date", "sort": 58},
+        {"name": "Направление последнего БП", "type": "text", "sort": 59},
+        {"name": "Педагог последнего БП", "type": "text", "sort": 60},
+    ]
+    create_fields("contacts", fields, access_token)
+    result_fields = get_fields_for(Contact)
+
+    for field in result_fields:
+        match field.name:
+            case "Дата последней записи на ПУ":
+                Config.last_paid_lesson_date_id = field.id
+            case "Дата записи на ближайший ПУ":
+                Config.last_paid_future_lesson_date_id = field.id
+            case "Дата последнего визита на ПУ":
+                Config.last_paid_visited_lesson_date_id = field.id
+            case "Направление последнего визита на ПУ":
+                Config.last_paid_visited_subject_name_id = field.id
+            case "Педагог последнего визита на ПУ":
+                Config.last_paid_visited_teacher_name_id = field.id
+            case "Количество ПО аб ПУ":
+                Config.count_paid_full_paid_subscriptions_id = field.id
+            case "Дата последней ПО аб ПУ":
+                Config.last_paid_full_paid_subscription_last_payment_date_id = field.id
+            case "Сумма посл ПО аб ПУ":
+                Config.last_paid_full_paid_subscription_last_payment_sum_id = field.id
+            case "Направление последнего ПО аб ПУ":
+                Config.last_paid_full_paid_subscription_subject_names_id = field.id
+            case "Кол-во всех ЧО аб ПУ":
+                Config.count_paid_partially_paid_subscriptions_id = field.id
+            case "Дата последней ЧО по аб ПУ":
+                Config.last_paid_partially_paid_subscription_last_payment_date_id = field.id
+            case "Кол-во актив аб ПУ":
+                Config.count_paid_active_subscriptions_id = field.id
+            case "Есть аб ПУ без записей":
+                Config.has_paid_active_not_used_subscription_id = field.id
+                Config.has_paid_active_not_used_subscription_yes_value_id = field.enums[0]["id"]
+                Config.has_paid_active_not_used_subscription_no_value_id = field.enums[1]["id"]
+            case "Есть аб ПУ с уроками без записи":
+                Config.has_paid_active_subscription_with_remaining_units_id = field.id
+                Config.has_paid_active_subscription_with_remaining_units_yes_value_id = field.enums[0]["id"]
+                Config.has_paid_active_subscription_with_remaining_units_no_value_id = field.enums[1]["id"]
+            case "Есть архивные аб ПУ с уроками":
+                Config.has_paid_archive_subscription_with_remaining_units_id = field.id
+                Config.has_paid_archive_subscription_with_remaining_units_yes_value_id = field.enums[0]["id"]
+                Config.has_paid_archive_subscription_with_remaining_units_no_value_id = field.enums[1]["id"]
+            case "Был посещен ПП":
+                Config.has_paid_promo_visited_lesson_id = field.id
+                Config.has_paid_promo_visited_lesson_yes_value_id = field.enums[0]["id"]
+                Config.has_paid_promo_visited_lesson_no_value_id = field.enums[1]["id"]
+            case "Дата последнего визита на ПП":
+                Config.last_paid_promo_visited_lesson_visit_date_id = field.id
+            case "Направление последнего ПП":
+                Config.last_paid_promo_visited_lesson_subject_name_id = field.id
+            case "Педагог последнего ПП":
+                Config.last_paid_promo_visited_lesson_teacher_name_id = field.id
+            case "Кол-во ПО аб ПП":
+                Config.count_paid_promo_full_paid_subscriptions_id = field.id
+            case "Кол-во активн аб ПП":
+                Config.count_paid_promo_active_subscriptions_id = field.id
+            case "Дата оплаты последнего аб ПП":
+                Config.last_paid_promo_full_paid_subscription_last_payment_date_id = field.id
+            case "Направление последнего ПО аб ПП":
+                Config.last_paid_promo_full_paid_subscription_subject_names_id = field.id
+            case "Был посещен БП":
+                Config.has_free_promo_visited_lesson_id = field.id
+                Config.has_free_promo_visited_lesson_yes_id = field.enums[0]["id"]
+                Config.has_free_promo_visited_lesson_no_id = field.enums[1]["id"]
+            case "Дата последнего визита на БП":
+                Config.last_free_promo_visited_lesson_visit_date_id = field.id
+            case "Направление последнего БП":
+                Config.last_free_promo_visited_lesson_subject_name_id = field.id
+            case "Педагог последнего БП":
+                Config.last_free_promo_visited_lesson_teacher_name_id = field.id
+
+
 
 
 def create_contact_custom_fields(access_token: str):
@@ -286,7 +406,7 @@ def create_lead_custom_fields(access_token: str):
     ]
     create_fields("leads", fields, access_token)
     fields = get_fields_for(Lead)
-    Config.lead_statuses_exclude: [142, 143]
+    Config.lead_statuses_exclude = [142, 143]
     for field in fields:
         match field.name:
             case "utm_content":
@@ -318,7 +438,7 @@ def create_lead_custom_fields(access_token: str):
             case "ID абонементов для оплаты платных промоуроков":
                 Config.lead_id_subscription_paid_promo_field_id = field.id
 
-        Config.lead_roistat_field_id: 0
+        Config.lead_roistat_field_id = 0
 
 
 def get_fields_for(model: Type[Model]) -> Iterable[custom_field.CustomFieldModel]:

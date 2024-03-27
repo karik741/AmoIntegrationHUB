@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Optional
 from datetime import datetime, timedelta
+import time
 
 from amocrm.v2 import tokens
 
@@ -65,10 +66,25 @@ def on_qtickets_event(event: List[QticketsInfo]):
     for basket in event[0]['qticketsWebhookResponse']['baskets']:
         if basket['checked_at'] is None:
             phone = basket['client_phone']
-            contact = find_contact_by_phone(phone)
+            contact = None
+            attempt_count = 0
+            while not contact and attempt_count < 4:
+                print(f'qtickets: {attempt_count + 1} попытка найти контакт')
+                contact = find_contact_by_phone(phone)
+
+                if not contact:
+                    print("qtickets: Контакт не найден - новая попытка")
+                    time.sleep(5)
+                    attempt_count += 1
 
             if not contact:
-                return
+                print(f'qtickets: Контакт не найден, создаем новый контакт')
+                contact = Contact()
+                contact.name = basket['client_name']
+                contact.phone = basket['client_phone']
+                contact.save()
+            else:
+                print(f'qtickets: Контакт найдет, используем контакт {contact.id}')
 
             lead = choose_lead_for_event(contact)
             lead.price = basket['price']
@@ -84,8 +100,13 @@ def on_qtickets_event(event: List[QticketsInfo]):
 def choose_lead_for_event(contact: Contact):
     leads = contact.leads_loaded
     if len(leads) == 1:
-        if datetime.now() - contact.leads_loaded[0].created_at < timedelta(minutes=5):
+        print("1 лид найден")
+        print(f"Проверяем время {datetime.now() - contact.leads_loaded[0].created_at} < {timedelta(minutes=20)}")
+        if datetime.now() - contact.leads_loaded[0].created_at < timedelta(minutes=20):
+            print("Да")
             return contact.leads_loaded[0]
+        else:
+            print("Нет")
         return Lead()
     else:
         return Lead()

@@ -139,6 +139,52 @@ class ConfigType:
     settings_task_type_reregister_to_current_manager = False
     db_url = 0
 
+    # новые поля
+    last_paid_lesson_date_id = 0
+    last_paid_future_lesson_date_id = 0
+    last_paid_visited_lesson_date_id = 0
+    last_paid_visited_subject_name_id = 0
+    last_paid_visited_teacher_name_id = 0
+    count_paid_full_paid_subscriptions_id = 0
+    last_paid_full_paid_subscription_last_payment_date_id = 0
+    last_paid_full_paid_subscription_last_payment_sum_id = 0
+    last_paid_full_paid_subscription_subject_names_id = 0
+    count_paid_partially_paid_subscriptions_id = 0
+    last_paid_partially_paid_subscription_last_payment_date_id = 0
+    count_paid_active_subscriptions_id = 0
+
+    has_paid_active_not_used_subscription_id = 0
+    has_paid_active_not_used_subscription_yes_value_id = 0
+    has_paid_active_not_used_subscription_no_value_id = 0
+
+    has_paid_active_subscription_with_remaining_units_id = 0
+    has_paid_active_subscription_with_remaining_units_yes_value_id = 0
+    has_paid_active_subscription_with_remaining_units_no_value_id = 0
+
+    has_paid_archive_subscription_with_remaining_units_id = 0
+    has_paid_archive_subscription_with_remaining_units_yes_value_id = 0
+    has_paid_archive_subscription_with_remaining_units_no_value_id = 0
+
+    has_paid_promo_visited_lesson_id = 0
+    has_paid_promo_visited_lesson_yes_value_id = 0
+    has_paid_promo_visited_lesson_no_value_id = 0
+
+    last_paid_promo_visited_lesson_visit_date_id = 0
+    last_paid_promo_visited_lesson_subject_name_id = 0
+    last_paid_promo_visited_lesson_teacher_name_id = 0
+    count_paid_promo_full_paid_subscriptions_id = 0
+    count_paid_promo_active_subscriptions_id = 0
+    last_paid_promo_full_paid_subscription_last_payment_date_id = 0
+    last_paid_promo_full_paid_subscription_subject_names_id = 0
+
+    has_free_promo_visited_lesson_id = 0
+    has_free_promo_visited_lesson_yes_id = 0
+    has_free_promo_visited_lesson_no_id = 0
+
+    last_free_promo_visited_lesson_visit_date_id = 0
+    last_free_promo_visited_lesson_subject_name_id = 0
+    last_free_promo_visited_lesson_teacher_name_id = 0
+
     def whitelist_enabled(self):
         return len(self.allowed_phones) > 0
 
@@ -282,6 +328,64 @@ class ConfigType:
         self.settings_task_type_reregister_to_current_manager = \
             config['settings_task_type_reregister_to_current_manager']
         self.db_url = config['db_url']
+
+        self.last_paid_lesson_date_id = config['last_paid_lesson_date_id']
+        self.last_paid_future_lesson_date_id = config['last_paid_future_lesson_date_id']
+        self.last_paid_visited_lesson_date_id = config['last_paid_visited_lesson_date_id']
+        self.last_paid_visited_subject_name_id = config['last_paid_visited_subject_name_id']
+        self.last_paid_visited_teacher_name_id = config['last_paid_visited_teacher_name_id']
+        self.count_paid_full_paid_subscriptions_id = config['count_paid_full_paid_subscriptions_id']
+        self.last_paid_full_paid_subscription_last_payment_date_id = \
+            config['last_paid_full_paid_subscription_last_payment_date_id']
+        self.last_paid_full_paid_subscription_last_payment_sum_id = \
+            config['last_paid_full_paid_subscription_last_payment_sum_id']
+        self.last_paid_full_paid_subscription_subject_names_id = \
+            config['last_paid_full_paid_subscription_subject_names_id']
+        self.count_paid_partially_paid_subscriptions_id =\
+            config['count_paid_partially_paid_subscriptions_id']
+        self.last_paid_partially_paid_subscription_last_payment_date_id = \
+            config['last_paid_partially_paid_subscription_last_payment_date_id']
+        self.count_paid_active_subscriptions_id = config['count_paid_active_subscriptions_id']
+        self.has_paid_active_not_used_subscription_id = config['has_paid_active_not_used_subscription_id']
+        self.has_paid_active_subscription_with_remaining_units_id =\
+            config['has_paid_active_subscription_with_remaining_units_id']
+        self.has_paid_archive_subscription_with_remaining_units_id =\
+            config['has_paid_archive_subscription_with_remaining_units_id']
+        self.has_paid_promo_visited_lesson_id = config['has_paid_promo_visited_lesson_id']
+        self.last_paid_promo_visited_lesson_visit_date_id = config['last_paid_promo_visited_lesson_visit_date_id']
+        self.last_paid_promo_visited_lesson_subject_name_id = config['last_paid_promo_visited_lesson_subject_name_id']
+        self.last_paid_promo_visited_lesson_teacher_name_id = config['last_paid_promo_visited_lesson_teacher_name_id']
+        self.count_paid_promo_full_paid_subscriptions_id = config['count_paid_promo_full_paid_subscriptions_id']
+        self.count_paid_promo_active_subscriptions_id = config['count_paid_promo_active_subscriptions_id']
+        self.last_paid_promo_full_paid_subscription_last_payment_date_id =\
+            config['last_paid_promo_full_paid_subscription_last_payment_date_id']
+        self.last_paid_promo_full_paid_subscription_subject_names_id =\
+            config['last_paid_promo_full_paid_subscription_subject_names_id']
+        self.has_free_promo_visited_lesson_id = config['has_free_promo_visited_lesson_id']
+        self.last_free_promo_visited_lesson_visit_date_id = config['last_free_promo_visited_lesson_visit_date_id']
+        self.last_free_promo_visited_lesson_subject_name_id = config['last_free_promo_visited_lesson_subject_name_id']
+        self.last_free_promo_visited_lesson_teacher_name_id = config['last_free_promo_visited_lesson_teacher_name_id']
+
+        self.has_paid_active_not_used_subscription_yes_value_id =\
+            config['has_paid_active_not_used_subscription_yes_value_id']
+        self.has_paid_active_not_used_subscription_no_value_id =\
+            config['has_paid_active_not_used_subscription_no_value_id']
+
+        self.has_paid_active_subscription_with_remaining_units_yes_value_id =\
+            config['has_paid_active_subscription_with_remaining_units_yes_value_id']
+        self.has_paid_active_subscription_with_remaining_units_no_value_id =\
+            config['has_paid_active_subscription_with_remaining_units_no_value_id']
+
+        self.has_paid_archive_subscription_with_remaining_units_yes_value_id =\
+            config['has_paid_archive_subscription_with_remaining_units_yes_value_id']
+        self.has_paid_archive_subscription_with_remaining_units_no_value_id =\
+            config['has_paid_archive_subscription_with_remaining_units_no_value_id']
+
+        self.has_paid_promo_visited_lesson_yes_value_id = config['has_paid_promo_visited_lesson_yes_value_id']
+        self.has_paid_promo_visited_lesson_no_value_id = config['has_paid_promo_visited_lesson_no_value_id']
+
+        self.has_free_promo_visited_lesson_yes_id = config['has_free_promo_visited_lesson_yes_id']
+        self.has_free_promo_visited_lesson_no_id = config['has_free_promo_visited_lesson_no_id']
 
 
 Config = ConfigType()

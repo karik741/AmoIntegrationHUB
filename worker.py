@@ -1,14 +1,17 @@
-from celery.signals import worker_process_init
-from celery.exceptions import SoftTimeLimitExceeded, MaxRetriesExceededError
+from celery.signals import worker_process_init, worker_ready
+from celery.exceptions import MaxRetriesExceededError
+from billiard.exceptions import SoftTimeLimitExceeded
 from typing import List
 from celery import Celery
-import requests
+from kombu import Queue, Exchange
 
 
-from amo_auto_install import create_all
+from amo_auto_install import create_all, create_new_contact_custom_fields
+from entity_helpers.amo_init import init_tokens
 from monkey_patch import patch
 from asgiref.sync import async_to_sync
-from amocrm.v2 import tokens, Pipeline
+from amocrm.v2 import tokens
+from amocrm.v2.exceptions import UnAuthorizedException, AmoApiException
 
 
 from config import Config, save
@@ -22,11 +25,38 @@ from tasks.send_template import on_send_template_task, Template
 from tasks.on_qtickets_event import on_qtickets_event, QticketsInfo
 from tasks.add_lead_from_promoter import on_add_lead_from_promoter, PromoterLead
 from tasks.amo_temp_update import on_push_amo_leads
+from tasks.ai_confirmation import on_ai_confirmation, ConfirmationData
 
 patch()
 
 app = Celery(broker=Config.broker_url, backend='rpc://')
+
+exchange_name = Config.task_queue
+
+app.conf.task_queues = (
+    Queue(f'{Config.task_queue}', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+    Queue(f'{Config.task_queue}_contacts_create', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+    Queue(f'{Config.task_queue}_contacts_update', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+    Queue(f'{Config.task_queue}_push_leads', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+    Queue(f'{Config.task_queue}_send_templates', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+    Queue(f'{Config.task_queue}_ai_confirmation', exchange=Exchange(exchange_name, type='direct'), routing_key=f'{Config.task_queue}', queue_arguments={'x-max-priority': 10}),
+)
+
 app.conf.task_default_queue = Config.task_queue
+app.conf.task_queue_max_priority = 10
+app.conf.task_default_priority = 5
+
+
+@worker_ready.connect()
+def start(**kwargs):
+    token = init_tokens()
+    if Config.client_docrm_uuid_field_id == 0:
+        create_all()
+        save()
+
+    if Config.last_paid_lesson_date_id == 0:
+        create_new_contact_custom_fields(token)
+        save()
 
 
 @app.on_after_configure.connect
@@ -35,121 +65,251 @@ def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(3600, refresh_tokens_task.s(), name='Refresh tokens every hour')
 
 
-@app.task(queue=f'{Config.task_queue}_contacts_create', priority=1, soft_time_limit=300)
-def amo_contact_create_task(id: int):
+@app.task(queue=f'{Config.task_queue}_contacts_create', priority=9, soft_time_limit=300, bind=True, max_retries=5)
+def amo_contact_create_task(self, id: int):
     try:
         async_to_sync(on_amo_contact_task)(id)
     except SoftTimeLimitExceeded as e:
-        amo_contact_create_task.delay(id)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(queue=f'{Config.task_queue}_contacts_update', priority=2, soft_time_limit=300)
-def amo_contact_update_task(id: int):
+
+@app.task(queue=f'{Config.task_queue}_contacts_update', priority=7, soft_time_limit=300, bind=True, max_retries=5)
+def amo_contact_update_task(self, id: int):
     try:
         async_to_sync(on_amo_contact_task)(id)
     except SoftTimeLimitExceeded as e:
-        amo_contact_update_task.delay(id)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(queue=f'{Config.task_queue}_contacts_update', priority=2, soft_time_limit=300)
-def contact_edit_task(contact_data: ContactData):
+@app.task(queue=f'{Config.task_queue}_contacts_update', priority=7, soft_time_limit=300, bind=True, max_retries=5)
+def contact_edit_task(self, contact_data: ContactData):
     try:
         on_contact_edit(contact_data)
     except SoftTimeLimitExceeded as e:
-        contact_edit_task.delay(contact_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=6, soft_time_limit=300)
-def deal_changed_task(deal_data: DealData):
+
+@app.task(queue=f'{Config.task_queue}_contacts_update', priority=0, soft_time_limit=300, bind=True, max_retries=5)
+def contact_edit_from_hf_task(self, contact_data: ContactData):
+    try:
+        on_contact_edit(contact_data)
+    except SoftTimeLimitExceeded as e:
+        print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
+
+
+@app.task(priority=4, soft_time_limit=300, bind=True, max_retries=5)
+def deal_changed_task(self, deal_data: DealData):
     try:
         on_deal_changed(deal_data)
     except SoftTimeLimitExceeded as e:
-        deal_changed_task.delay(deal_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=5, soft_time_limit=300)
-def add_lead_from_promoter_task(promoter_lead_data: PromoterLead):
+@app.task(priority=5, soft_time_limit=300, bind=True, max_retries=5)
+def add_lead_from_promoter_task(self, promoter_lead_data: PromoterLead):
     try:
         on_add_lead_from_promoter(promoter_lead_data)
     except SoftTimeLimitExceeded as e:
-        add_lead_from_promoter_task.delay(promoter_lead_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(queue=f'{Config.task_queue}_push_leads', priority=11, soft_time_limit=300)
-def push_amo_leads_task(number, pipeline_id, status_id, loss_reason_id, deal_name, tag):
+@app.task(queue=f'{Config.task_queue}_push_leads', priority=2, soft_time_limit=300, bind=True, max_retries=5)
+def push_amo_leads_task(self, number, pipeline_id, status_id, loss_reason_id, deal_name, tag):
     try:
         on_push_amo_leads(number, pipeline_id, status_id, loss_reason_id, deal_name, tag)
-
     except SoftTimeLimitExceeded as e:
-        push_amo_leads_task.delay(number)
         print(e)
-
-    except Exception as e:
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
         print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=0)
-def get_pipelines_task():
-    pipelines = []
-    _pipelines = Pipeline.objects.all()
-    for _pipline in _pipelines:
-        statuses = [{'id': status.id, 'name': status.name} for status in _pipline.statuses]
-        pipelines.append({'id': _pipline.id, 'name': _pipline.name, 'statuses': statuses})
-    return pipelines
 
-
-@app.task(priority=0)
-def get_loss_reasons_task():
-    token = tokens.default_token_manager.get_access_token()
-    api_call_headers = {'Authorization': 'Bearer ' + token}
-    response = requests.get(f'https://{Config.subdomain}.amocrm.ru/ajax/v3/loss_reasons', headers=api_call_headers,
-                            verify=True)
-    loss_reasons = response.json().get('_embedded', {}).get('items', [])
-    return loss_reasons
-
-
-@app.task(priority=7, soft_time_limit=300)
-def record_updated_task(task_data: RecordData):
+@app.task(priority=3, soft_time_limit=600, bind=True, max_retries=5)
+def record_updated_task(self, task_data: RecordData):
     try:
         on_record_updated(task_data)
     except SoftTimeLimitExceeded as e:
-        record_updated_task.delay(task_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=10, soft_time_limit=300)
-def create_and_save_task_task(lesson, contact_id):
+@app.task(priority=0, soft_time_limit=300, bind=True, max_retries=5)
+def create_and_save_task_task(self, lesson, contact_phone):
     try:
-        create_and_save_task(lesson, contact_id)
+        create_and_save_task(lesson, contact_phone)
     except SoftTimeLimitExceeded as e:
-        create_and_save_task_task.delay(lesson, contact_id)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=4, soft_time_limit=300)
-def wordpress_task(task_data: WordpressData):
+@app.task(priority=6, soft_time_limit=300, bind=True, max_retries=5)
+def wordpress_task(self, task_data: WordpressData):
     try:
         on_wordpress_task(task_data)
     except SoftTimeLimitExceeded as e:
-        wordpress_task.delay(task_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=9, soft_time_limit=300)
-def qtickets_event_task(task_data: List[QticketsInfo]):
+@app.task(priority=1, soft_time_limit=600, bind=True, max_retries=5)
+def qtickets_event_task(self, task_data: List[QticketsInfo]):
     try:
         on_qtickets_event(task_data)
     except SoftTimeLimitExceeded as e:
-        qtickets_event_task.delay(task_data)
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(queue=f'{Config.task_queue}_send_templates', priority=3, bind=True, soft_time_limit=300, max_retries=5)
+@app.task(queue=f'{Config.task_queue}_ai_confirmation', priority=1, soft_time_limit=600, bind=True, max_retries=5)
+def ai_confirmation_task(self, task_data: ConfirmationData):
+    try:
+        on_ai_confirmation(task_data)
+    except SoftTimeLimitExceeded as e:
+        print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print('test')
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
+
+
+@app.task(queue=f'{Config.task_queue}_send_templates', priority=8, bind=True, soft_time_limit=300, max_retries=5)
 def send_template_task(self, templates: List[Template], lead_id: str):
     try:
         on_send_template_task(templates, lead_id)
@@ -159,59 +319,65 @@ def send_template_task(self, templates: List[Template], lead_id: str):
         except MaxRetriesExceededError as max_retry_error:
             print('Достигнуто максимальное количество попыток для задачи send_template_task:', max_retry_error)
         print(e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task(priority=0, soft_time_limit=300)
-def refresh_tokens_task():
+@app.task(priority=0, soft_time_limit=300, bind=True, max_retries=5)
+def refresh_tokens_task(self):
     try:
         tokens.default_token_manager.get_access_token()
     except SoftTimeLimitExceeded as e:
-        refresh_tokens_task.delay()
         print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
 
 
-@app.task
-def set_init_code_task(code: str):
+@app.task(bind=True, max_retries=5, soft_time_limit=300)
+def set_init_code_task(self, code: str):
     try:
         tokens.default_token_manager.init(code=code)
+    except SoftTimeLimitExceeded as e:
+        print(e)
+        raise self.retry(exc=e)
+    except UnAuthorizedException as e:
+        print(e)
+        raise self.retry(exc=e)
+    except AmoApiException as e:
+        if "Connection aborted." in str(e):
+            print("Обработка исключения AmoApiException: Connection aborted.")
+            raise self.retry(exc=e)
+        else:
+            print(e)
+            print("Обработка других исключений AmoApiException")
+            raise self.retry(exc=e)
     except Exception as e:
         print(e)
-
 
 @worker_process_init.connect
 def init_worker_process(sender, **kwargs):
-    print('Initializing worker process')
+    init_tokens()
 
-    if not tokens.default_token_manager._client_id:
-        tokens.default_token_manager(
-            client_id=Config.client_id,
-            client_secret=Config.client_secret,
-            subdomain=Config.subdomain,
-            redirect_url=Config.redirect_url,
-            storage=tokens.FileTokensStorage(directory_path=Config.token_directory)
-        )
 
-    token = ''
-    try:
-        token = tokens.default_token_manager.get_access_token()
-    except Exception as e:
-        print(f'Error getting access token: {e}')
-        token = ''
 
-    print('Token: ' + token)
-    print('Code: ' + Config.code)
 
-    if not token and Config.code:
-        tokens.default_token_manager.init(code=Config.code)
-        try:
-            token = tokens.default_token_manager.get_access_token()
-        except Exception as e:
-            print(f'Error getting access token after init: {e}')
-            token = ''
-
-    print('Token after init: ' + token)
-
-    if Config.primary_leads_pipeline_id == 0:
-        create_all()
-        save()
 

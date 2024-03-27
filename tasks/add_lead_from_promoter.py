@@ -37,10 +37,7 @@ def on_add_lead_from_promoter(promoter_lead_data: PromoterLead):
     lead.status = Config.lead_status_new_lead_value_id
     lead.roistat_user = "оффлайн_промоутеры"
     lead.save()
-
     lead_tags = [f'лид от промоутера']
-
-
     create_tags(lead, lead_tags, access_token)
 
 
@@ -52,8 +49,7 @@ def process_contact_for_lead_from_promoter(promoter_lead_data: PromoterLead, acc
     contacts = find_contacts(clean_phone)
     if contacts:
         for contact in contacts:
-            print(contact.name)
-            print(contact.doCRM_id)
+
             if contact.doCRM_id is not None:
                 return contact
 
